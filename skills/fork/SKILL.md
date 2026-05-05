@@ -183,7 +183,13 @@ List the org's teams once:
 gh api orgs/{fork_org}/teams --paginate --jq '.[].slug'
 ```
 
-Pick at most one team whose slug matches the repository. Run `brief ./src` and look at `languages[0].name` and `package_managers[0].name`; match those (lowercased, non-alphanumerics stripped) against the team slugs. For example a Go repo matches a `go` or `golang` team, an npm repo matches `npm` or `javascript` or `nodejs`, a Cargo repo matches `rust`. If nothing matches, leave `"team": null` and move on — do not invent a team.
+Pick at most one team whose slug matches the repository, trying these signals in order and stopping at the first hit:
+
+1. **Foundation / upstream org.** Lowercase the upstream `{owner}` and see if any team slug is a substring of it or vice versa. `eclipse-platform` or `eclipse-ee4j` matches an `eclipse` team, `apache` matches `apache`, a `kubernetes-sigs` repo matches `kubernetes` or `cncf`. Also check `GET {api_base}/repositories/{repository_id}/maintainers` — if a maintainer's affiliation or the repo's funding/SECURITY.md (already in `./src`) names a foundation that appears as a team slug, prefer that.
+2. **Ecosystem.** `package_managers[0].name` from `brief ./src`, mapped the same way as the GHSA ecosystem enum: Bundler→`ruby`/`rubygems`, npm/Yarn/pnpm→`npm`/`javascript`/`nodejs`, Cargo→`rust`, Go Modules→`go`/`golang`, pip/Poetry→`python`/`pypi`, Maven/Gradle→`java`/`maven`, Composer→`php`.
+3. **Primary language.** `languages[0].name` from `brief ./src`, lowercased.
+
+Match by normalising both the candidate and each team slug (lowercase, strip non-alphanumerics) and testing whether either contains the other. If nothing matches, leave `"team": null` and move on — do not invent a team.
 
 If a team matched and you filed at least one advisory, add the team as a collaborator on each new advisory:
 
