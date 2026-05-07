@@ -457,7 +457,8 @@ type FindingHistory struct {
 // the agentskills.io SKILL.md format: Body is the markdown that sits after
 // the frontmatter, the other fields are frontmatter. Metadata holds the raw
 // YAML map serialised as JSON so we do not lose scrutineer-specific keys
-// (scrutineer.output_file, scrutineer.output_schema, scrutineer.output_kind).
+// (scrutineer.output_file, scrutineer.output_schema, scrutineer.output_kind,
+// scrutineer.max_turns, scrutineer.model).
 //
 // Skills loaded from a local directory or git repo have Source set; skills
 // created in the UI have Source="ui". Version bumps on every save so old
@@ -477,6 +478,7 @@ type Skill struct {
 	OutputFile string // from metadata["scrutineer.output_file"]
 	OutputKind string `gorm:"index"` // from metadata["scrutineer.output_kind"]
 	MaxTurns   int    // from metadata["scrutineer.max_turns"]
+	Model      string // from metadata["scrutineer.model"]; empty = use scan/server default
 
 	Version int  `gorm:"not null;default:1"`
 	Active  bool `gorm:"not null;default:true"`

@@ -216,6 +216,7 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("queue: %w", err)
 	}
 
+	skills.ModelValidator = web.ValidModel
 	if err := loadSkills(log, gdb, f.dataDir, f.skillLocal, f.skillsRepo, f.fullClone()); err != nil {
 		return err
 	}

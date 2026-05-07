@@ -44,6 +44,7 @@ func (s *Server) skillNew(w http.ResponseWriter, r *http.Request) {
 		"S":      db.Skill{Active: true, Source: "ui"},
 		"Action": "/skills",
 		"Verb":   "Create",
+		"Models": Models,
 	})
 }
 
@@ -58,6 +59,7 @@ func (s *Server) skillEdit(w http.ResponseWriter, r *http.Request) {
 		"S":      skill,
 		"Action": "/skills/" + strconv.Itoa(int(skill.ID)),
 		"Verb":   "Save",
+		"Models": Models,
 	})
 }
 
@@ -73,6 +75,7 @@ func (s *Server) skillCreate(w http.ResponseWriter, r *http.Request) {
 		OutputFile:  strings.TrimSpace(r.FormValue("output_file")),
 		OutputKind:  strings.TrimSpace(r.FormValue("output_kind")),
 		MaxTurns:    parseMaxTurns(r.FormValue("max_turns")),
+		Model:       parseSkillModel(r.FormValue("model")),
 		SchemaJSON:  r.FormValue("schema_json"),
 		Source:      "ui",
 		Active:      true,
@@ -114,6 +117,7 @@ func (s *Server) skillUpdate(w http.ResponseWriter, r *http.Request) {
 	skill.OutputFile = strings.TrimSpace(r.FormValue("output_file"))
 	skill.OutputKind = strings.TrimSpace(r.FormValue("output_kind"))
 	skill.MaxTurns = parseMaxTurns(r.FormValue("max_turns"))
+	skill.Model = parseSkillModel(r.FormValue("model"))
 	skill.SchemaJSON = r.FormValue("schema_json")
 	skill.Active = r.FormValue("active") == "on"
 	if !validateSkillName(skill.Name) {
@@ -138,6 +142,17 @@ func parseMaxTurns(s string) int {
 		return 0
 	}
 	return n
+}
+
+// parseSkillModel keeps the form value only if it's in the configured Models
+// list. Anything else (typo, blank, model removed from config) is silently
+// dropped so the scan falls back to the server default at enqueue time.
+func parseSkillModel(s string) string {
+	s = strings.TrimSpace(s)
+	if !ValidModel(s) {
+		return ""
+	}
+	return s
 }
 
 // skillRun enqueues a skill-backed scan for a repo. Accepts skill_id and

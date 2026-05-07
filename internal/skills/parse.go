@@ -32,9 +32,16 @@ const (
 	metaOutputFile = "scrutineer.output_file"
 	metaOutputKind = "scrutineer.output_kind"
 	metaMaxTurns   = "scrutineer.max_turns"
+	metaModel      = "scrutineer.model"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// ModelValidator gates the scrutineer.model metadata key. When non-nil, a
+// skill declaring a model the validator rejects gets a warning and the
+// field is left empty (the scan falls back to the server default). Wired
+// from main.go after the model list is configured.
+var ModelValidator func(string) bool
 
 // Parsed is a SKILL.md-plus-neighbours as extracted from disk. It mirrors the
 // Skill model shape so the caller can persist it without further work.
@@ -51,6 +58,7 @@ type Parsed struct {
 	OutputFile string
 	OutputKind string
 	MaxTurns   int
+	Model      string
 
 	SourcePath string // absolute path to the skill directory
 	SourceHash string // sha256 of SKILL.md + schema.json contents
@@ -146,6 +154,16 @@ func (p *Parsed) extractMetadataKeys() {
 	if v, ok := p.Metadata[metaMaxTurns].(int); ok && v > 0 {
 		p.MaxTurns = v
 	}
+	if v, ok := p.Metadata[metaModel].(string); ok {
+		m := strings.TrimSpace(v)
+		if m != "" {
+			if ModelValidator == nil || ModelValidator(m) {
+				p.Model = m
+			} else {
+				p.Warnings = append(p.Warnings, fmt.Sprintf("model %q is not in the configured model list, ignoring", m))
+			}
+		}
+	}
 }
 
 func (p *Parsed) loadSchema() {
@@ -188,6 +206,7 @@ func (p *Parsed) ToModel(source string) (*db.Skill, error) {
 		OutputFile:    p.OutputFile,
 		OutputKind:    p.OutputKind,
 		MaxTurns:      p.MaxTurns,
+		Model:         p.Model,
 		Active:        true,
 		Source:        source,
 		SourcePath:    p.SourcePath,

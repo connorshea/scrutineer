@@ -48,6 +48,17 @@
              value="{{.MaxTurns}}" min="0" placeholder="0">
       <p class="text-xs text-muted-foreground">Per-skill turn cap for claude-code. 0 = use default (30).</p>
     </div>
+    <div class="grid gap-2">
+      <label for="model">Preferred model</label>
+      <select id="model" class="input" name="model">
+        <option value=""{{if eq .Model ""}} selected{{end}}>— use server default —</option>
+        {{$cur := .Model}}
+        {{range $.Models}}
+        <option value="{{.ID}}"{{if eq .ID $cur}} selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+      <p class="text-xs text-muted-foreground">Wins over the server default; an explicit per-scan model still wins over this.</p>
+    </div>
   </div>
 
   <div class="grid gap-2">

@@ -155,6 +155,25 @@ func TestParseMaxTurns(t *testing.T) {
 	}
 }
 
+func TestParseSkillModel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"garbage", ""},
+		{"claude-sonnet-4-6", "claude-sonnet-4-6"},
+		{" claude-opus-4-7 ", "claude-opus-4-7"},
+	}
+	for _, tc := range tests {
+		got := parseSkillModel(tc.input)
+		if got != tc.want {
+			t.Errorf("parseSkillModel(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestSkillRetry_preservesSkillID(t *testing.T) {
 	s, done := newTestServer(t)
 	defer done()

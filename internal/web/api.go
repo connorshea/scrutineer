@@ -327,6 +327,7 @@ func (s *Server) apiListSkills(w http.ResponseWriter, r *http.Request) {
 			"output_kind": sk.OutputKind,
 			"output_file": sk.OutputFile,
 			"max_turns":   sk.MaxTurns,
+			"model":       sk.Model,
 			"version":     sk.Version,
 			"active":      sk.Active,
 		})
