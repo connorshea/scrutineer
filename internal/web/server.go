@@ -1628,10 +1628,16 @@ func (s *Server) enqueueSkillScoped(ctx context.Context, repoID, skillID uint, f
 
 // enqueueSkillWith creates a skill scan using the given ScanOpts. Empty
 // fields default cleanly: unset FindingID means not-finding-scoped, empty
-// SubPath means root-scoped, empty Model means the configured default.
+// SubPath means root-scoped. Model precedence is: explicit opts.Model >
+// the skill's preferred Model > server default.
 func (s *Server) enqueueSkillWith(ctx context.Context, repoID, skillID uint, opts ScanOpts) (uint, error) {
 	if !ValidModel(opts.Model) {
-		opts.Model = DefaultModel()
+		var sk db.Skill
+		if err := s.DB.Select("model").First(&sk, skillID).Error; err == nil && ValidModel(sk.Model) {
+			opts.Model = sk.Model
+		} else {
+			opts.Model = DefaultModel()
+		}
 	}
 	scan := db.Scan{
 		RepositoryID:   repoID,

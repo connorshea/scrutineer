@@ -128,6 +128,94 @@ body
 	}
 }
 
+func TestParseFile_model(t *testing.T) {
+	old := ModelValidator
+	t.Cleanup(func() { ModelValidator = old })
+	ModelValidator = func(s string) bool { return s == "claude-sonnet-4-6" }
+
+	dir := t.TempDir()
+	path := writeSkill(t, dir, "lite", `---
+name: lite
+description: Sonnet-friendly skill.
+metadata:
+  scrutineer.model: claude-sonnet-4-6
+---
+
+body
+`)
+	p, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Model != "claude-sonnet-4-6" {
+		t.Errorf("model = %q, want claude-sonnet-4-6", p.Model)
+	}
+	for _, w := range p.Warnings {
+		if strings.Contains(w, "model") {
+			t.Errorf("unexpected model warning: %v", w)
+		}
+	}
+
+	m, err := p.ToModel("local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Model != "claude-sonnet-4-6" {
+		t.Errorf("db.Skill.Model = %q, want claude-sonnet-4-6", m.Model)
+	}
+}
+
+func TestParseFile_modelInvalidIgnoredWithWarning(t *testing.T) {
+	old := ModelValidator
+	t.Cleanup(func() { ModelValidator = old })
+	ModelValidator = func(s string) bool { return s == "claude-sonnet-4-6" }
+
+	dir := t.TempDir()
+	path := writeSkill(t, dir, "typo", `---
+name: typo
+description: Skill with a bad model id.
+metadata:
+  scrutineer.model: claude-sonnet-typo
+---
+
+body
+`)
+	p, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Model != "" {
+		t.Errorf("model = %q, want empty (invalid + ignored)", p.Model)
+	}
+	found := false
+	for _, w := range p.Warnings {
+		if strings.Contains(w, "claude-sonnet-typo") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning mentioning the rejected model, got %v", p.Warnings)
+	}
+}
+
+func TestParseFile_modelUnset(t *testing.T) {
+	dir := t.TempDir()
+	path := writeSkill(t, dir, "noprefer", `---
+name: noprefer
+description: No preferred model.
+---
+
+body
+`)
+	p, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Model != "" {
+		t.Errorf("model = %q, want empty (unset)", p.Model)
+	}
+}
+
 func TestParseFile_schemaLoaded(t *testing.T) {
 	dir := t.TempDir()
 	path := writeSkill(t, dir, "s", `---

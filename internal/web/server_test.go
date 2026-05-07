@@ -1332,6 +1332,45 @@ func TestFindingPatchRunEnqueuesPatchSkill(t *testing.T) {
 	}
 }
 
+func TestEnqueueSkillWith_modelPrecedence(t *testing.T) {
+	s, done := newTestServer(t)
+	defer done()
+
+	repo := db.Repository{URL: "https://github.com/foo/bar", Name: "bar"}
+	s.DB.Create(&repo)
+	withModel := db.Skill{Name: "lite", Body: "b", OutputFile: "r.json", OutputKind: "freeform",
+		Version: 1, Active: true, Source: "ui", Model: "claude-sonnet-4-6"}
+	s.DB.Create(&withModel)
+	noModel := db.Skill{Name: "heavy", Body: "b", OutputFile: "r.json", OutputKind: "freeform",
+		Version: 1, Active: true, Source: "ui"}
+	s.DB.Create(&noModel)
+
+	cases := []struct {
+		name    string
+		skillID uint
+		opts    ScanOpts
+		want    string
+	}{
+		{"explicit scan model wins", withModel.ID, ScanOpts{Model: "claude-opus-4-7"}, "claude-opus-4-7"},
+		{"skill model fills empty scan model", withModel.ID, ScanOpts{}, "claude-sonnet-4-6"},
+		{"skill model fills invalid scan model", withModel.ID, ScanOpts{Model: "garbage"}, "claude-sonnet-4-6"},
+		{"server default when nothing set", noModel.ID, ScanOpts{}, DefaultModel()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scanID, err := s.enqueueSkillWith(context.Background(), repo.ID, tc.skillID, tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sc db.Scan
+			s.DB.First(&sc, scanID)
+			if sc.Model != tc.want {
+				t.Errorf("scan.Model = %q, want %q", sc.Model, tc.want)
+			}
+		})
+	}
+}
+
 func TestEnqueueSkillWith_findingScopedJumpsQueue(t *testing.T) {
 	s, done := newTestServer(t)
 	defer done()
