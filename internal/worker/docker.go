@@ -69,6 +69,7 @@ func (d DockerRunner) RunSkill(ctx context.Context, sj SkillJob, emit func(Event
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"-e", "HOME=/tmp",
 		"-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		"-e", "SEMGREP_SEND_METRICS=off",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
 		"-v", absWork + ":/work",
 		"-w", "/work",

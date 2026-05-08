@@ -175,11 +175,13 @@ func run(log *slog.Logger) error {
 	}
 
 	// Suppress claude-code's telemetry, error reporting, auto-updater and
-	// feedback command. The docker runner sets this on the container too;
-	// setting it here covers the local runner, which inherits host env. The
-	// egress proxy already blocks the DataDog log-intake host this would
-	// reach, so without this the operator just sees denied-CONNECT noise.
+	// feedback command, and semgrep's metrics POST. The docker runner sets
+	// these on the container too; setting them here covers the local
+	// runner, which inherits host env. The egress proxy already blocks the
+	// hosts these reach (DataDog log-intake, metrics.semgrep.dev) so
+	// without this the operator just sees denied-CONNECT noise.
 	_ = os.Setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+	_ = os.Setenv("SEMGREP_SEND_METRICS", "off")
 
 	if f.anthropicBaseURL == "" {
 		f.anthropicBaseURL = os.Getenv("ANTHROPIC_BASE_URL")
