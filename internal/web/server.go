@@ -828,6 +828,41 @@ var severityOrder = `CASE severity
 	WHEN 'Critical' THEN 0 WHEN 'High' THEN 1
 	WHEN 'Medium' THEN 2 WHEN 'Low' THEN 3 ELSE 4 END`
 
+// loadRepoFindings returns the open findings for a repo split into two
+// slices: deep-dive output and tool-scanner output (zizmor, semgrep, …).
+// Findings with no matching scan or an empty skill_name are treated as
+// deep-dive so legacy rows don't get lost. The returned scanSkill map is
+// keyed by scan ID and is what the template reads to label scanner cards.
+func loadRepoFindings(gdb *gorm.DB, repoID uint) ([]db.Finding, []db.Finding, map[uint]string) {
+	var all []db.Finding
+	gdb.Where("repository_id = ? AND status NOT IN ?", repoID,
+		[]db.FindingLifecycle{db.FindingRejected, db.FindingDuplicate}).
+		Order(severityOrder).Order("id desc").Find(&all)
+
+	scanSkill := map[uint]string{}
+	if len(all) == 0 {
+		return nil, nil, scanSkill
+	}
+	var rows []struct {
+		ID        uint
+		SkillName string
+	}
+	gdb.Raw(`SELECT id, COALESCE(skill_name, '') AS skill_name FROM scans WHERE repository_id = ?`, repoID).Scan(&rows)
+	for _, row := range rows {
+		scanSkill[row.ID] = row.SkillName
+	}
+	var deepDive, scanners []db.Finding
+	for _, f := range all {
+		name := scanSkill[f.ScanID]
+		if name == "" || name == deepDiveSkillName {
+			deepDive = append(deepDive, f)
+		} else {
+			scanners = append(scanners, f)
+		}
+	}
+	return deepDive, scanners, scanSkill
+}
+
 func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 	q := s.DB.Model(&db.Finding{})
 	// Default to deep-dive findings only; scanner skills (zizmor, semgrep)
@@ -1495,39 +1530,7 @@ func (s *Server) repoShow(w http.ResponseWriter, r *http.Request) {
 	s.DB.Model(&db.Scan{}).Where("repository_id = ?", repo.ID).
 		Select("COALESCE(SUM(cost_usd), 0)").Scan(&totalCost)
 
-	// All findings across every scan of this repo, not just the latest
-	// deep-dive run. rejected/duplicate are analyst-dispositioned noise and
-	// stay off the tab; everything else is shown so an empty or failed
-	// latest scan does not hide earlier results (#72).
-	var allFindings []db.Finding
-	s.DB.Where("repository_id = ? AND status NOT IN ?", repo.ID,
-		[]db.FindingLifecycle{db.FindingRejected, db.FindingDuplicate}).
-		Order(severityOrder).Order("id desc").Find(&allFindings)
-
-	// Findings from the structured audit (security-deep-dive) and findings
-	// from tool-style scanners (zizmor, semgrep, …) render in separate tabs
-	// so the curated audit list isn't drowned out by lint noise. Anything
-	// without a matching scan is treated as deep-dive to avoid losing it.
-	scanSkill := map[uint]string{}
-	if len(allFindings) > 0 {
-		var rows []struct {
-			ID        uint
-			SkillName string
-		}
-		s.DB.Raw(`SELECT id, COALESCE(skill_name, '') AS skill_name FROM scans WHERE repository_id = ?`, repo.ID).Scan(&rows)
-		for _, row := range rows {
-			scanSkill[row.ID] = row.SkillName
-		}
-	}
-	var findings, scannerFindings []db.Finding
-	for _, f := range allFindings {
-		name := scanSkill[f.ScanID]
-		if name == "" || name == deepDiveSkillName {
-			findings = append(findings, f)
-		} else {
-			scannerFindings = append(scannerFindings, f)
-		}
-	}
+	findings, scannerFindings, scanSkill := loadRepoFindings(s.DB, repo.ID)
 
 	var maintainers []db.Maintainer
 	s.DB.Joins("JOIN repository_maintainers ON repository_maintainers.maintainer_id = maintainers.id").
