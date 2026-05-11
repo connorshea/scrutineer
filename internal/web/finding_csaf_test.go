@@ -151,11 +151,11 @@ func TestFindingCSAF_perDependentVEX(t *testing.T) {
 	ps := v["product_status"].(map[string]any)
 
 	affected := toStringSlice(ps["known_affected"])
-	if !contains(affected, "DEP-"+strconv.FormatUint(uint64(depAffected.ID), 10)) {
+	if !slices.Contains(affected, "DEP-"+strconv.FormatUint(uint64(depAffected.ID), 10)) {
 		t.Errorf("known_affected missing DEP-%d: %+v", depAffected.ID, affected)
 	}
 	notAffected := toStringSlice(ps["known_not_affected"])
-	if !contains(notAffected, "DEP-"+strconv.FormatUint(uint64(depSafe.ID), 10)) {
+	if !slices.Contains(notAffected, "DEP-"+strconv.FormatUint(uint64(depSafe.ID), 10)) {
 		t.Errorf("known_not_affected missing DEP-%d: %+v", depSafe.ID, notAffected)
 	}
 
@@ -165,7 +165,7 @@ func TestFindingCSAF_perDependentVEX(t *testing.T) {
 		flag := raw.(map[string]any)
 		if flag["label"] == db.JustifVulnerableCodeNotInPath {
 			sawJustif = true
-			if !contains(toStringSlice(flag["product_ids"]), "DEP-"+strconv.FormatUint(uint64(depSafe.ID), 10)) {
+			if !slices.Contains(toStringSlice(flag["product_ids"]), "DEP-"+strconv.FormatUint(uint64(depSafe.ID), 10)) {
 				t.Errorf("justification flag missing dependent id: %+v", flag)
 			}
 		}
@@ -187,10 +187,6 @@ func toStringSlice(v any) []string {
 		}
 	}
 	return out
-}
-
-func contains(xs []string, want string) bool {
-	return slices.Contains(xs, want)
 }
 
 func TestFindingCSAF_rejectedMapsToNotAffected(t *testing.T) {

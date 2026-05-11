@@ -2,6 +2,7 @@
 name: exposure
 description: For one (finding, dependent) pair, decide whether the dependent's published code actually reaches the upstream library finding. Emit one CSAF 2.0 product_status verdict so scrutineer can record affected vs not_affected and stamp the right VEX justification.
 license: MIT
+allowed-tools: Read,Write,Glob,Grep,WebFetch,LS
 metadata:
   scrutineer.version: 1
   scrutineer.output_file: report.json
@@ -16,7 +17,7 @@ Your verdict feeds CSAF VEX export, so use the CSAF product_status vocabulary. T
 
 ## Workspace
 
-- `./src` — the dependent's cloned source (a symlink into scrutineer's dependent-cache; treat as read-only)
+- `./src` — a per-scan copy of the dependent's cloned source
 - `./context.json` — has `scrutineer.api_base`, `scrutineer.token`, `scrutineer.finding_id`, `scrutineer.dependent_id`
 - `./report.json` — write your verdict here
 - `./schema.json` — output shape
@@ -36,7 +37,7 @@ Read `title`, `location`, `sinks`, `trace`, `boundary` and `affected`. These tel
 
 1. **Find how this dependent uses the library.** Grep `./src` for imports/requires of the library package (the finding's `repository_url` / `affected` field name it). If the lockfile lists the lib but no source file uses the dangerous symbol, status is `known_not_affected` with justification `vulnerable_code_not_in_execute_path`.
 
-2. **Check the pinned version against `affected`.** If the dependent pins a version outside the affected range, status is `known_not_affected` with justification `component_not_present` (the vulnerable build is not present in this consumer).
+2. **Check the pinned version against `affected`.** If the dependent pins a version outside the affected range, status is `known_not_affected` with justification `vulnerable_code_not_present` (the consumer ships the library, but the build it ships does not contain the vulnerable code). `component_not_present` is reserved for the case where the library itself is not in the dependent at all.
 
 3. **Trace from a public entry point to the call.** Use the same heuristics `reachability` uses: request handlers, CLI entry points, library exports. If the only callers are test fixtures or admin-only tooling, status is `known_not_affected` with justification `vulnerable_code_not_in_execute_path`.
 

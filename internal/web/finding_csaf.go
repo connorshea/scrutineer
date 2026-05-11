@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -460,8 +461,13 @@ func buildFlags(f db.Finding, productIDs []string, fdRows []db.FindingDependent,
 		}
 		byLabel[r.Justification] = append(byLabel[r.Justification], dependentProductID(dep))
 	}
-	for label, ids := range byLabel {
-		flags = append(flags, csafFlag{Label: label, ProductIDs: ids})
+	labels := make([]string, 0, len(byLabel))
+	for label := range byLabel {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	for _, label := range labels {
+		flags = append(flags, csafFlag{Label: label, ProductIDs: byLabel[label]})
 	}
 	return flags
 }

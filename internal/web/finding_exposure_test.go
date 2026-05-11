@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -27,8 +28,7 @@ func TestFindingExposureRun_enqueuesScanPerDependent(t *testing.T) {
 	defer done()
 
 	f, skill := seedExposureFinding(t, s)
-	for i, name := range []string{"a", "b", "c"} {
-		_ = i
+	for _, name := range []string{"a", "b", "c"} {
 		s.DB.Create(&db.Dependent{RepositoryID: f.RepositoryID, Name: name, Ecosystem: "npm",
 			RepositoryURL: "https://github.com/example/" + name, DependentRepos: 100})
 	}
@@ -36,7 +36,7 @@ func TestFindingExposureRun_enqueuesScanPerDependent(t *testing.T) {
 	s.DB.Create(&skipped)
 
 	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, localReq("POST", "/findings/1/exposure"))
+	s.Handler().ServeHTTP(w, localReq("POST", fmt.Sprintf("/findings/%d/exposure", f.ID)))
 	if w.Code != 200 && w.Code != 303 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
@@ -62,10 +62,10 @@ func TestFindingExposureRun_enqueuesScanPerDependent(t *testing.T) {
 func TestFindingExposureRun_noDependents422(t *testing.T) {
 	s, done := newTestServer(t)
 	defer done()
-	seedExposureFinding(t, s)
+	f, _ := seedExposureFinding(t, s)
 
 	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, localReq("POST", "/findings/1/exposure"))
+	s.Handler().ServeHTTP(w, localReq("POST", fmt.Sprintf("/findings/%d/exposure", f.ID)))
 	if w.Code != 422 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
@@ -85,7 +85,7 @@ func TestFindingExposureRun_skillMissing412(t *testing.T) {
 		RepositoryURL: "https://github.com/example/a", DependentRepos: 1})
 
 	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, localReq("POST", "/findings/1/exposure"))
+	s.Handler().ServeHTTP(w, localReq("POST", fmt.Sprintf("/findings/%d/exposure", f.ID)))
 	if w.Code != 412 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}

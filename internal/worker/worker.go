@@ -51,6 +51,12 @@ type Worker struct {
 
 	mu      sync.Mutex
 	running map[uint]context.CancelFunc
+
+	// cacheMu serialises clone/fetch on the dependent-clone cache per
+	// URL. A Mutex per URL keeps two exposure scans from racing inside
+	// the same physical dir while leaving scans of different
+	// dependents free to run in parallel.
+	cacheMu sync.Map
 }
 
 // Cancel aborts an in-flight scan. Returns true if a running job was found and

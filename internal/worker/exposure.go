@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"scrutineer/internal/db"
 )
@@ -23,12 +25,94 @@ func dependentCacheRoot(dataDir, url string) string {
 	return filepath.Join(dataDir, "dependent-cache", hex.EncodeToString(sum[:]))
 }
 
+// cacheMutex returns the per-URL mutex used to serialise fetch+copy on
+// the dependent cache. Lazily created on first use.
+func (w *Worker) cacheMutex(url string) *sync.Mutex {
+	v, _ := w.cacheMu.LoadOrStore(url, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// prepareDependentSrc updates the shared dependent cache for url under a
+// per-URL lock, then copies it into workRoot/src so the skill operates
+// on its own tree. The cache survives across scans; the per-scan copy
+// is whatever the skill leaves behind. Returns the HEAD commit of the
+// freshly-synced cache.
+func (w *Worker) prepareDependentSrc(ctx context.Context, url, ref, workRoot string, emit func(Event)) (string, error) {
+	mu := w.cacheMutex(url)
+	mu.Lock()
+	defer mu.Unlock()
+
+	cacheRoot := dependentCacheRoot(w.DataDir, url)
+	if err := os.MkdirAll(cacheRoot, dirPerm); err != nil {
+		return "", err
+	}
+	cacheSrc, err := ensureClone(ctx, db.Repository{URL: url}, cacheRoot, false, ref, emit)
+	if err != nil {
+		return "", err
+	}
+	commit := gitHead(cacheSrc)
+	dst := filepath.Join(workRoot, "src")
+	if err := os.RemoveAll(dst); err != nil {
+		return "", err
+	}
+	if err := copyTree(cacheSrc, dst); err != nil {
+		return "", fmt.Errorf("copy dependent cache: %w", err)
+	}
+	return commit, nil
+}
+
+// copyTree recursively copies src to dst, preserving permissions but not
+// ownership or timestamps. Symlinks are recreated; everything else is
+// copied byte-for-byte. Fast enough for git trees up to a few hundred MB.
+func copyTree(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		switch {
+		case info.IsDir():
+			return os.MkdirAll(target, info.Mode().Perm())
+		case info.Mode()&os.ModeSymlink != 0:
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		default:
+			return copyFile(path, target, info.Mode().Perm())
+		}
+	})
+}
+
+func copyFile(src, dst string, perm os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 // doExposure runs the exposure skill for one (finding, dependent) pair.
 // The scan's Repository stays the library being audited; ./src in the
-// workspace is symlinked to the shared dependent cache so concurrent
-// scans on different findings against the same dependent share the
-// clone. The skill returns one product_status verdict that is upserted
-// into finding_dependents.
+// workspace is a fresh copy of the shared dependent cache, so the
+// skill cannot pollute the cache and concurrent scans against the same
+// dependent serialise on a per-URL lock around the fetch. The skill
+// returns one product_status verdict that is upserted into
+// finding_dependents.
 func (w *Worker) doExposure(ctx context.Context, scan *db.Scan, emit func(Event)) (string, error) {
 	if scan.FindingID == nil || scan.DependentID == nil {
 		return "", fmt.Errorf("exposure scan %d missing finding_id or dependent_id", scan.ID)
@@ -63,15 +147,16 @@ func (w *Worker) doExposure(ctx context.Context, scan *db.Scan, emit func(Event)
 	if err := os.MkdirAll(workRoot, dirPerm); err != nil {
 		return "", err
 	}
-	cache := dependentCacheRoot(w.DataDir, dep.RepositoryURL)
-	if err := os.MkdirAll(cache, dirPerm); err != nil {
+	cacheCommit, err := w.prepareDependentSrc(ctx, dep.RepositoryURL, scan.Ref, workRoot, emit)
+	if err != nil {
+		if _, ok := errors.AsType[*RepoUnreachableError](err); ok {
+			w.upsertExposure(scan, dep.ID, db.ExposureUnderInvestigation, "", "dependent repository unreachable", "")
+			emit(Event{Kind: KindError, Text: err.Error()})
+			return "", nil
+		}
 		return "", err
 	}
-	srcLink := filepath.Join(workRoot, "src")
-	_ = os.Remove(srcLink)
-	if err := os.Symlink(cache, srcLink); err != nil {
-		return "", fmt.Errorf("symlink dependent cache: %w", err)
-	}
+	scan.Commit = cacheCommit
 
 	skillDir := filepath.Join(workRoot, ".claude", "skills", skill.Name)
 	if err := stageSkill(&skill, skillDir); err != nil {
@@ -96,9 +181,12 @@ func (w *Worker) doExposure(ctx context.Context, scan *db.Scan, emit func(Event)
 		Ref:          scan.Ref,
 		MaxTurns:     skill.MaxTurns,
 		AllowedTools: skill.AllowedTools,
+		SrcReady:     true,
 	}
 	res, err := w.Runner.RunSkill(ctx, sj, emit)
-	scan.Commit = res.Commit
+	if res.Commit != "" {
+		scan.Commit = res.Commit
+	}
 	if err != nil {
 		if _, ok := errors.AsType[*MaxTurnsReachedError](err); ok && res.Report != "" {
 			_ = w.parseExposureOutput(&skill, scan, dep.ID, res.Report, emit)

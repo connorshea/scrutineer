@@ -10,7 +10,7 @@ import (
 
 func newExposureWorker(t *testing.T) *Worker {
 	t.Helper()
-	gdb, err := db.Open("file::memory:?cache=shared")
+	gdb, err := db.Open("file::memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,8 +19,7 @@ func newExposureWorker(t *testing.T) *Worker {
 
 func seedExposureFixtures(t *testing.T, w *Worker) (db.Scan, db.Skill, db.Dependent) {
 	t.Helper()
-	tag := t.Name()
-	repo := db.Repository{URL: "https://github.com/example/lib-" + tag, Name: "lib"}
+	repo := db.Repository{URL: "https://github.com/example/lib", Name: "lib"}
 	if err := w.DB.Create(&repo).Error; err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
@@ -43,8 +42,8 @@ func seedExposureFixtures(t *testing.T, w *Worker) (db.Scan, db.Skill, db.Depend
 	if err := w.DB.Create(&scan).Error; err != nil {
 		t.Fatalf("seed scan: %v", err)
 	}
-	var skill db.Skill
-	if err := w.DB.Where(db.Skill{Name: "exposure"}).Attrs(db.Skill{Body: "x"}).FirstOrCreate(&skill).Error; err != nil {
+	skill := db.Skill{Name: "exposure", Body: "x"}
+	if err := w.DB.Create(&skill).Error; err != nil {
 		t.Fatalf("seed skill: %v", err)
 	}
 	return scan, skill, dep

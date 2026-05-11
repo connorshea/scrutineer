@@ -45,7 +45,6 @@ func (s *Server) findingExposureRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := r.FormValue("model")
-	queued := 0
 	for i := range deps {
 		dep := deps[i]
 		if dep.RepositoryURL == "" {
@@ -60,7 +59,6 @@ func (s *Server) findingExposureRun(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		queued++
 	}
 	s.redirect(w, r, fmt.Sprintf("/findings/%d", f.ID))
 }
