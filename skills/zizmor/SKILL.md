@@ -2,7 +2,7 @@
 name: zizmor
 description: Audit the repository's GitHub Actions workflows for common security issues (credential mishandling, untrusted inputs, template injection, overly permissive tokens) and convert findings to scrutineer's shape. Use on any repo with a .github/workflows directory.
 license: MIT
-compatibility: Requires `zizmor` (https://github.com/woodruffw/zizmor) and `python3` on PATH.
+compatibility: Requires `zizmor` (https://github.com/zizmorcore/zizmor) and `python3` on PATH.
 metadata:
   scrutineer.version: 1
   scrutineer.output_file: report.json
