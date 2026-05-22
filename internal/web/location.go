@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -9,6 +10,10 @@ import (
 // locationURL turns a finding location ("path/to/file.rb:12-34") into a blob
 // link on the upstream forge, anchored to the line range. Returns "" when we
 // don't have enough to build one (no html_url, no commit, unrecognised host).
+//
+// Host matching parses htmlURL and compares against u.Hostname() so a path
+// segment like ".../github.com/..." on an unrelated host can't be mistaken
+// for the real forge.
 func locationURL(htmlURL, commit, location string) string {
 	if htmlURL == "" || commit == "" || location == "" {
 		return ""
@@ -17,15 +22,20 @@ func locationURL(htmlURL, commit, location string) string {
 	if path == "" {
 		return ""
 	}
+	u, err := url.Parse(htmlURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
 	base := strings.TrimSuffix(htmlURL, "/")
 	switch {
-	case strings.Contains(base, "github.com"):
+	case host == "github.com":
 		u := fmt.Sprintf("%s/blob/%s/%s", base, commit, path)
 		if frag != "" {
 			u += "#" + githubFragment(frag)
 		}
 		return u
-	case strings.Contains(base, "codeberg.org"):
+	case host == "codeberg.org":
 		// Codeberg runs Gitea, which uses /src/commit/{sha}/ for blob views.
 		// Line anchors use the same L1 / L1-L5 shape as GitHub.
 		u := fmt.Sprintf("%s/src/commit/%s/%s", base, commit, path)
@@ -33,7 +43,7 @@ func locationURL(htmlURL, commit, location string) string {
 			u += "#" + githubFragment(frag)
 		}
 		return u
-	case strings.Contains(base, "gitlab."):
+	case strings.HasPrefix(host, "gitlab."):
 		u := fmt.Sprintf("%s/-/blob/%s/%s", base, commit, path)
 		if frag != "" {
 			u += "#" + gitlabFragment(frag)

@@ -27,6 +27,10 @@ func TestLocationURL(t *testing.T) {
 		{"", "abc", "x:1", ""},
 		{"https://github.com/a/b", "", "x:1", ""},
 		{"https://example.com/a/b", "abc", "x:1", ""},
+		// Host detection must use the parsed hostname, not substring match,
+		// so a forge name appearing in the path doesn't trigger a link.
+		{"https://example.com/github.com/a/b", "abc", "x:1", ""},
+		{"https://example.com/gitlab.com/a/b", "abc", "x:1", ""},
 	}
 	for _, c := range cases {
 		if got := locationURL(c.html, c.commit, c.loc); got != c.want {

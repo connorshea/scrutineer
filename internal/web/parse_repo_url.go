@@ -142,6 +142,9 @@ func stripGitSuffix(u string) string {
 // runs. Returns "" for hosts we don't recognise so authority for those
 // stays with the metadata skill.
 //
+// The returned URL has any trailing slash and ".git" suffix stripped so
+// it's a valid web-UI URL even when callers pass a raw clone URL.
+//
 // Recognised: github.com, codeberg.org, bitbucket.org, and any gitlab.*
 // host. The locationURL link builder resolves GitHub/Codeberg/GitLab,
 // but not Bitbucket; we still seed bitbucket because the field is
@@ -161,7 +164,7 @@ func DefaultHTMLURL(cloneURL string) string {
 		host == "codeberg.org",
 		host == "bitbucket.org",
 		strings.HasPrefix(host, "gitlab."):
-		return cloneURL
+		return stripGitSuffix(cloneURL)
 	}
 	return ""
 }
