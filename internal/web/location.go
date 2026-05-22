@@ -19,8 +19,16 @@ func locationURL(htmlURL, commit, location string) string {
 	}
 	base := strings.TrimSuffix(htmlURL, "/")
 	switch {
-	case strings.Contains(base, "github.com"), strings.Contains(base, "codeberg.org"):
+	case strings.Contains(base, "github.com"):
 		u := fmt.Sprintf("%s/blob/%s/%s", base, commit, path)
+		if frag != "" {
+			u += "#" + githubFragment(frag)
+		}
+		return u
+	case strings.Contains(base, "codeberg.org"):
+		// Codeberg runs Gitea, which uses /src/commit/{sha}/ for blob views.
+		// Line anchors use the same L1 / L1-L5 shape as GitHub.
+		u := fmt.Sprintf("%s/src/commit/%s/%s", base, commit, path)
 		if frag != "" {
 			u += "#" + githubFragment(frag)
 		}
@@ -35,7 +43,11 @@ func locationURL(htmlURL, commit, location string) string {
 	return ""
 }
 
-var locRE = regexp.MustCompile(`^(.*?):(\d+(?:-\d+)?)$`)
+// locRE splits a finding location into its file path and line spec. The
+// trailing column group is optional so importer-supplied locations that carry
+// a column ("file.js:42:7", as emitted by the SARIF parser) resolve to the
+// same blob link as native "file.rb:12-34" locations.
+var locRE = regexp.MustCompile(`^(.*?):(\d+(?:-\d+)?)(?::\d+(?:-\d+)?)?$`)
 
 func splitLocation(loc string) (path, lines string) {
 	loc = strings.TrimPrefix(strings.TrimSpace(loc), "./")
