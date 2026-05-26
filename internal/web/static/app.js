@@ -45,6 +45,11 @@
   document.addEventListener('htmx:historyRestore', init);
   document.addEventListener('htmx:oobAfterSwap', function () { icons(); highlight(); });
 
+  document.body.addEventListener('htmx:sseMessage', function (e) {
+    var el = e.target.closest('[data-reload-on-sse]');
+    if (el && e.detail.type === el.getAttribute('data-reload-on-sse')) location.reload();
+  });
+
   document.addEventListener('click', function (e) {
     var tr = e.target.closest('.table tbody tr');
     if (tr && !e.target.closest('a, button, form, input')) {

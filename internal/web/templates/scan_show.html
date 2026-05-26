@@ -151,7 +151,7 @@
     {{if $live}}
       <div hx-ext="sse" sse-connect="/events?scan={{.ID}}"
            sse-swap="scan-status" hx-swap="none" hx-disinherit="*"
-           hx-on::sse-message="if(event.detail.type==='scan-status') location.reload()">
+           data-reload-on-sse="scan-status">
         <pre class="log" sse-swap="scan-log" hx-swap="beforeend scroll:bottom">{{template "scan_log.html" .}}</pre>
       </div>
     {{else}}
