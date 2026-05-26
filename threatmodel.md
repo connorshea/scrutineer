@@ -92,13 +92,13 @@ Mitigation remaining: tag finding rows with their source job; render claude-sour
 
 ### T6: Stored XSS via finding fields (mitigated by stdlib + toolchain upgrade)
 
-Go's `html/template` auto-escapes all finding fields. `internal/web/jsontree.go` returns `template.HTML` but escapes every leaf through `html.EscapeString`. `internal/web/location.go` builds hrefs from `HTMLURL` which is now validated to have an http/https scheme by `safeURL()` (T7 fix).
+Go's `html/template` auto-escapes all finding fields. `internal/web/jsontree.go` returns `template.HTML` but escapes every leaf through `html.EscapeString`. `internal/web/location.go` builds hrefs from `HTMLURL`, which is not yet scheme-validated (see T7).
 
 The two `html/template` XSS vulnerabilities (`GO-2026-4865`, `GO-2026-4603`) are fixed by `toolchain go1.26.2` in go.mod.
 
-### T7: Untrusted upstream metadata (mitigated)
+### T7: Untrusted upstream metadata (partially mitigated)
 
-All five `io.ReadAll` calls in `metadata.go` are wrapped with `io.LimitReader(resp.Body, 10MB)` to prevent OOM from hostile endpoints. `HTMLURL` and `IconURL` are validated through `safeURL()` to require http/https scheme before storing.
+All five `io.ReadAll` calls in `metadata.go` are wrapped with `io.LimitReader(resp.Body, 10MB)` to prevent OOM from hostile endpoints. `HTMLURL` and `IconURL` are stored as-is without scheme validation; `safeURL()` is planned but not yet landed (#236).
 
 Residual: no certificate pinning for ecosyste.ms. A MITM'd response could still return a hostile `repository_url` that passes the `https://` check, leading to cloning an attacker repo. Accepted risk given HTTPS + public CA is the standard trust model.
 
