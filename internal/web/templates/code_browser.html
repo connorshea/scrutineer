@@ -1,0 +1,36 @@
+{{template "head" .}}
+{{template "crumbs" (crumbs
+  "Repositories" "/"
+  .Repo.Name (printf "/repositories/%d" .Repo.ID)
+  .Path "")}}
+
+<header class="mb-4 flex flex-wrap items-baseline gap-2">
+  <h2 class="text-xl font-semibold font-mono break-all">{{.Path}}</h2>
+  <span class="text-muted-foreground text-xs font-mono">@ {{short .Commit}}</span>
+</header>
+
+{{if .Missing}}
+  <div class="rounded border border-dashed p-6 text-sm text-muted-foreground">
+    No local clone yet for <code>{{.Repo.URL}}</code>. Run a scan to populate the cache.
+  </div>
+{{else if .Error}}
+  <div class="rounded border border-destructive/40 bg-destructive/5 p-4 text-sm">
+    <p class="font-medium mb-1">Could not load this file at <code>{{short .Commit}}</code>.</p>
+    <pre class="whitespace-pre-wrap text-xs">{{.Error}}</pre>
+  </div>
+{{else if .Binary}}
+  <div class="rounded border border-dashed p-6 text-sm text-muted-foreground">
+    Binary file — not rendered.
+  </div>
+{{else}}
+  {{if .Truncated}}
+  <p class="mb-2 text-xs text-muted-foreground">File truncated to 2 MiB.</p>
+  {{end}}
+  <div class="rounded border bg-muted/30 overflow-hidden"
+       data-hl-from="{{index .Highlight 0}}" data-hl-to="{{index .Highlight 1}}">
+    <pre class="overflow-x-auto p-0 m-0 text-xs leading-5"><code id="blob"{{if .Language}} class="language-{{.Language}}"{{end}}>{{.Content}}</code></pre>
+  </div>
+  <script src="/static/code_browser.js" defer></script>
+{{end}}
+
+{{template "foot" .}}
