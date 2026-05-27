@@ -230,7 +230,71 @@ func TestRepoBlob_rendersMissingNoticeWhenNoCache(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "No local clone") {
-		t.Errorf("body missing 'No local clone' notice:\n%s", rec.Body.String())
+	body := rec.Body.String()
+	if !strings.Contains(body, "No local clone") {
+		t.Errorf("body missing 'No local clone' notice:\n%s", body)
+	}
+	if strings.Contains(body, "View on forge") {
+		t.Errorf("body should not contain forge link for unknown host:\n%s", body)
+	}
+}
+
+func TestRepoBlob_rendersForgeLinkInMissingState(t *testing.T) {
+	s, done := newTestServer(t)
+	defer done()
+	s.Worker = &worker.Worker{DataDir: t.TempDir()}
+	repo := db.Repository{
+		URL:     "https://github.com/owner/repo",
+		HTMLURL: "https://github.com/owner/repo",
+		Name:    "repo",
+	}
+	s.DB.Create(&repo)
+
+	id := strconv.FormatUint(uint64(repo.ID), 10)
+	req := localReq("GET", "/repositories/"+id+"/blob/abc123/a.go")
+	req.SetPathValue("id", id)
+	req.SetPathValue("commit", "abc123")
+	req.SetPathValue("path", "a.go")
+	rec := httptest.NewRecorder()
+	s.repoBlob(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "https://github.com/owner/repo/blob/abc123/a.go") {
+		t.Errorf("body missing forge blob link:\n%s", body)
+	}
+	if !strings.Contains(body, "https://github.com/owner/repo/commit/abc123") {
+		t.Errorf("body missing forge commit link:\n%s", body)
+	}
+}
+
+func TestRepoBlob_rendersForgeLineTemplate(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	s, done := newTestServer(t)
+	defer done()
+	dataDir := t.TempDir()
+	s.Worker = &worker.Worker{DataDir: dataDir}
+	repo := db.Repository{
+		URL:     "https://github.com/owner/repo",
+		HTMLURL: "https://github.com/owner/repo",
+		Name:    "repo",
+	}
+	s.DB.Create(&repo)
+	c1, _ := seedRepoCache(t, dataDir, repo.URL)
+
+	id := strconv.FormatUint(uint64(repo.ID), 10)
+	req := localReq("GET", "/repositories/"+id+"/blob/"+c1+"/hello.go")
+	req.SetPathValue("id", id)
+	req.SetPathValue("commit", c1)
+	req.SetPathValue("path", "hello.go")
+	rec := httptest.NewRecorder()
+	s.repoBlob(rec, req)
+	body := rec.Body.String()
+	want := "data-forge-line=\"https://github.com/owner/repo/blob/" + c1 + "/hello.go#L{line}\""
+	if !strings.Contains(body, want) {
+		t.Errorf("body missing %q:\n%s", want, body)
 	}
 }

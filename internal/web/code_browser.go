@@ -87,14 +87,15 @@ func (s *Server) repoBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "code_browser.html", map[string]any{
-		"Repo":      repo,
-		"Commit":    commit,
-		"Path":      cleanPath,
-		"Highlight": parseHighlight(r.URL.Query().Get("line")),
-		"Binary":    binary,
-		"Truncated": truncated,
-		"Content":   content,
-		"Language":  highlightLang(cleanPath),
+		"Repo":         repo,
+		"Commit":       commit,
+		"Path":         cleanPath,
+		"Highlight":    parseHighlight(r.URL.Query().Get("line")),
+		"Binary":       binary,
+		"Truncated":    truncated,
+		"Content":      content,
+		"Language":     highlightLang(cleanPath),
+		"ForgeLineTpl": forgeLineURLTemplate(repo.HTMLURL, commit, cleanPath),
 	})
 }
 
