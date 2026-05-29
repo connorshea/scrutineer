@@ -5,11 +5,9 @@
 # The runner's Debian release (bookworm-slim, inherited via FROM) only
 # supplies the build toolchain here -- Ruby itself is compiled from source
 # by ruby-build at an explicit pinned version, so the interpreter is
-# current regardless of what the distro packages. This mirrors the PHP
-# profile's intent (a modern, pinned interpreter rather than the EOL
-# distro default).
+# current regardless of what the distro packages.
 #
-# Built on demand by the worker; the image tag is content-addressed on
+# Built on-demand by the worker; the image tag is content-addressed on
 # this Dockerfile's sha so an edit invalidates the cache automatically.
 #
 #   docker build --build-arg RUNNER_IMAGE=<digest-pinned-runner> \
