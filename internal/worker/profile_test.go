@@ -18,6 +18,7 @@ func TestProfileByName(t *testing.T) {
 		{"", "", true, false},
 		{"default", "", true, false},
 		{"php", "php", true, true},
+		{"ruby", "ruby", true, true},
 		{"unknown", "", false, false},
 	}
 	for _, tt := range tests {
@@ -44,6 +45,8 @@ func TestMatchProfile(t *testing.T) {
 	}{
 		{"composer matches php", `{"package_managers":[{"name":"Composer"}]}`, "php"},
 		{"composer case-insensitive", `{"package_managers":[{"name":"composer"}]}`, "php"},
+		{"bundler matches ruby", `{"package_managers":[{"name":"Bundler"}]}`, "ruby"},
+		{"bundler case-insensitive", `{"package_managers":[{"name":"bundler"}]}`, "ruby"},
 		{"first match wins over later", `{"package_managers":[{"name":"Composer"},{"name":"npm"}]}`, "php"},
 		{"unknown manager falls back", `{"package_managers":[{"name":"npm"}]}`, ""},
 		{"empty list falls back", `{"package_managers":[]}`, ""},
@@ -119,11 +122,13 @@ func TestEnsureImage_missingDockerfile(t *testing.T) {
 	}
 }
 
-func TestRepoShipsPHPDockerfile(t *testing.T) {
+func TestRepoShipsProfileDockerfiles(t *testing.T) {
 	wd, _ := os.Getwd()
 	repoRoot := filepath.Join(wd, "..", "..")
-	path := filepath.Join(repoRoot, "docker", "profiles", "php", "Dockerfile")
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected php profile Dockerfile to exist: %v", err)
+	for _, p := range builtinProfiles {
+		path := filepath.Join(repoRoot, "docker", "profiles", p.Name, "Dockerfile")
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s profile Dockerfile to exist: %v", p.Name, err)
+		}
 	}
 }
