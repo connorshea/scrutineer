@@ -47,6 +47,8 @@ func TestMatchProfile(t *testing.T) {
 		{"composer case-insensitive", `{"package_managers":[{"name":"composer"}]}`, "php"},
 		{"bundler matches ruby", `{"package_managers":[{"name":"Bundler"}]}`, "ruby"},
 		{"bundler case-insensitive", `{"package_managers":[{"name":"bundler"}]}`, "ruby"},
+		{"ruby before php picks ruby", `{"package_managers":[{"name":"Bundler"},{"name":"Composer"}]}`, "ruby"},
+		{"php before ruby picks php", `{"package_managers":[{"name":"Composer"},{"name":"Bundler"}]}`, "php"},
 		{"first match wins over later", `{"package_managers":[{"name":"Composer"},{"name":"npm"}]}`, "php"},
 		{"unknown manager falls back", `{"package_managers":[{"name":"npm"}]}`, ""},
 		{"empty list falls back", `{"package_managers":[]}`, ""},
@@ -119,6 +121,33 @@ func TestEnsureImage_missingDockerfile(t *testing.T) {
 	_, err := Profile{Name: "php"}.EnsureImage(context.Background(), dir, "default:latest")
 	if err == nil {
 		t.Fatal("expected error for missing dockerfile, got nil")
+	}
+}
+
+// TestBuiltinProfiles_registrySanity guards the invariants matchProfile
+// and the validators rely on: every entry must have a name and ecosystem,
+// names must be unique, and ecosystems must be unique case-insensitively
+// (a duplicate would silently make auto-detection resolve the wrong
+// profile, with no other test failing).
+func TestBuiltinProfiles_registrySanity(t *testing.T) {
+	names := map[string]bool{}
+	ecosystems := map[string]bool{}
+	for _, p := range builtinProfiles {
+		if p.Name == "" {
+			t.Error("profile with empty Name")
+		}
+		if p.Ecosystem == "" {
+			t.Errorf("profile %q has empty Ecosystem", p.Name)
+		}
+		if names[p.Name] {
+			t.Errorf("duplicate profile Name %q", p.Name)
+		}
+		names[p.Name] = true
+		eco := strings.ToLower(p.Ecosystem)
+		if ecosystems[eco] {
+			t.Errorf("duplicate profile Ecosystem %q (case-insensitive)", p.Ecosystem)
+		}
+		ecosystems[eco] = true
 	}
 }
 
