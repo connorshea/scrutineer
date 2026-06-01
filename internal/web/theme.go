@@ -1,11 +1,14 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"slices"
+	"time"
 
 	"scrutineer/internal/config"
 	"scrutineer/internal/db"
+	"scrutineer/internal/worker"
 )
 
 const cookieMaxAge = 365 * 24 * 60 * 60 //nolint:mnd
@@ -69,6 +72,8 @@ func (s *Server) settingsShow(w http.ResponseWriter, r *http.Request) {
 	var dbPath string
 	s.DB.Raw("SELECT file FROM pragma_database_list WHERE name = 'main'").Scan(&dbPath)
 
+	meta := s.toolMetadataCached(r.Context())
+
 	s.render(w, r, "settings.html", map[string]any{
 		"Themes":       config.Themes,
 		"Models":       Models,
@@ -79,7 +84,46 @@ func (s *Server) settingsShow(w http.ResponseWriter, r *http.Request) {
 		"DBSize":       dbSizeBytes,
 		"DBPath":       dbPath,
 		"WorkDir":      s.Worker.DataDir,
+		"Commit":       s.Commit,
+		"Meta":         meta,
 	})
+}
+
+// toolMetadata is the runtime version info shown on the settings page:
+// the scanner tools baked into the runner image plus the host docker
+// daemon and the runner image name itself.
+type toolMetadata struct {
+	worker.RunnerToolVersions
+	Docker      string
+	RunnerImage string
+}
+
+// toolMetadataTTL bounds how long a gathered version set is reused. Versions
+// only change when the operator pulls a new image or restarts docker, so a
+// generous TTL keeps the settings page DB-fast without going stale for long.
+const toolMetadataTTL = 5 * time.Minute
+
+// toolMetadataTimeout caps the docker shell-outs so a hung or missing daemon
+// degrades to "unavailable" instead of stalling the settings page.
+const toolMetadataTimeout = 5 * time.Second
+
+func (s *Server) toolMetadataCached(ctx context.Context) toolMetadata {
+	s.toolMetaMu.Lock()
+	defer s.toolMetaMu.Unlock()
+	if time.Now().Before(s.toolMetaTTL) {
+		return s.toolMetaCache
+	}
+	ctx, cancel := context.WithTimeout(ctx, toolMetadataTimeout)
+	defer cancel()
+	image := worker.RunnerImageName(s.Worker.Runner)
+	meta := toolMetadata{
+		RunnerToolVersions: worker.QueryRunnerToolVersions(ctx, image),
+		Docker:             worker.DockerServerVersion(ctx),
+		RunnerImage:        image,
+	}
+	s.toolMetaCache = meta
+	s.toolMetaTTL = time.Now().Add(toolMetadataTTL)
+	return meta
 }
 
 func (s *Server) settingsUpdateTheme(w http.ResponseWriter, r *http.Request) {
