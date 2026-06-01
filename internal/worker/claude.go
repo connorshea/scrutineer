@@ -133,7 +133,7 @@ func (l LocalClaude) RunSkill(ctx context.Context, sj SkillJob, emit func(Event)
 
 	emit(Event{Kind: KindText, Text: "$ claude -p <skill:" + sj.Name + ">"})
 	args := buildClaudeArgs(sj, l.Effort, l.MaxTurns)
-	waitErr, hitMaxTurns, sessionID := l.runClaudeOnce(ctx, args, work, emit)
+	hitMaxTurns, sessionID, waitErr := l.runClaudeOnce(ctx, args, work, emit)
 
 	if waitErr != nil && sj.ResumeSessionID != "" && sessionID == "" {
 		// The resume never produced a session event, so claude could not
@@ -144,7 +144,7 @@ func (l LocalClaude) RunSkill(ctx context.Context, sj SkillJob, emit func(Event)
 		fresh := sj
 		fresh.ResumeSessionID = ""
 		args = buildClaudeArgs(fresh, l.Effort, l.MaxTurns)
-		waitErr, hitMaxTurns, sessionID = l.runClaudeOnce(ctx, args, work, emit)
+		hitMaxTurns, sessionID, waitErr = l.runClaudeOnce(ctx, args, work, emit)
 	}
 
 	res := SkillResult{Commit: commit, SessionID: sessionID}
@@ -164,18 +164,18 @@ func (l LocalClaude) RunSkill(ctx context.Context, sj SkillJob, emit func(Event)
 // output through emit, and reports the wait error, whether the run hit the
 // max-turns cap, and the session id from the init event (empty when no init
 // event arrived, e.g. a --resume that could not find the conversation).
-func (l LocalClaude) runClaudeOnce(ctx context.Context, args []string, work string, emit func(Event)) (waitErr error, hitMaxTurns bool, sessionID string) {
+func (l LocalClaude) runClaudeOnce(ctx context.Context, args []string, work string, emit func(Event)) (hitMaxTurns bool, sessionID string, waitErr error) {
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = work
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err, false, ""
+		return false, "", err
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start claude: %w", err), false, ""
+		return false, "", fmt.Errorf("start claude: %w", err)
 	}
 
 	wrappedEmit := func(e Event) {
@@ -192,7 +192,7 @@ func (l LocalClaude) runClaudeOnce(ctx context.Context, args []string, work stri
 	if cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
-	return waitErr, hitMaxTurns, sessionID
+	return hitMaxTurns, sessionID, waitErr
 }
 
 // maxReportBytes caps how much of a skill's report.json scrutineer will

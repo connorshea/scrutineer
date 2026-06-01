@@ -139,7 +139,7 @@ func (d DockerRunner) RunSkill(ctx context.Context, sj SkillJob, emit func(Event
 	}
 	emit(Event{Kind: KindText, Text: logLine})
 
-	waitErr, hitMaxTurns, sessionID := d.runDockerOnce(ctx, dockerBase, sj, emit)
+	hitMaxTurns, sessionID, waitErr := d.runDockerOnce(ctx, dockerBase, sj, emit)
 
 	if waitErr != nil && sj.ResumeSessionID != "" && sessionID == "" {
 		// The resume produced no session event, so claude could not load the
@@ -149,7 +149,7 @@ func (d DockerRunner) RunSkill(ctx context.Context, sj SkillJob, emit func(Event
 		emit(Event{Kind: KindText, Text: "resume of session " + sj.ResumeSessionID + " failed; restarting fresh"})
 		fresh := sj
 		fresh.ResumeSessionID = ""
-		waitErr, hitMaxTurns, sessionID = d.runDockerOnce(ctx, dockerBase, fresh, emit)
+		hitMaxTurns, sessionID, waitErr = d.runDockerOnce(ctx, dockerBase, fresh, emit)
 	}
 
 	res := SkillResult{Commit: commit, Profile: profile, SessionID: sessionID}
@@ -170,7 +170,7 @@ func (d DockerRunner) RunSkill(ctx context.Context, sj SkillJob, emit func(Event
 // through emit, and reporting the wait error, whether the run hit the
 // max-turns cap, and the session id from the init event (empty when no init
 // event arrived, e.g. a --resume that could not find the conversation).
-func (d DockerRunner) runDockerOnce(ctx context.Context, dockerBase []string, sj SkillJob, emit func(Event)) (waitErr error, hitMaxTurns bool, sessionID string) {
+func (d DockerRunner) runDockerOnce(ctx context.Context, dockerBase []string, sj SkillJob, emit func(Event)) (hitMaxTurns bool, sessionID string, waitErr error) {
 	claudeArgs := append([]string{"claude"}, buildClaudeArgs(sj, d.Effort, d.MaxTurns)...)
 	dockerArgs := append(append([]string{}, dockerBase...), claudeArgs...)
 
@@ -180,11 +180,11 @@ func (d DockerRunner) runDockerOnce(ctx context.Context, dockerBase []string, sj
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err, false, ""
+		return false, "", err
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start docker: %w", err), false, ""
+		return false, "", fmt.Errorf("start docker: %w", err)
 	}
 
 	wrappedEmit := func(e Event) {
@@ -201,7 +201,7 @@ func (d DockerRunner) runDockerOnce(ctx context.Context, dockerBase []string, sj
 	if cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
-	return waitErr, hitMaxTurns, sessionID
+	return hitMaxTurns, sessionID, waitErr
 }
 
 // buildDockerArgs assembles the `docker run` flags for a skill invocation.

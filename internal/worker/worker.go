@@ -128,6 +128,48 @@ func (w *Worker) applyResume(scan *db.Scan, sj *SkillJob, emit func(Event)) {
 	}
 }
 
+// scanEmitter returns the emit callback handed to a job handler. It appends
+// each event to the scan log (persisting incrementally so the UI streams it)
+// and snapshots result-event token usage. Session events are special: they
+// carry no log line and instead persist the claude session id the moment it
+// appears so a crash mid-run leaves the scan resumable. The in-memory struct
+// is kept in sync too — wrap's final Save(&scan) writes every column and
+// would otherwise clobber a column-only update with a stale value.
+func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
+	return func(e Event) {
+		if e.Kind == KindSession {
+			if e.SessionID != "" && e.SessionID != scan.SessionID {
+				scan.SessionID = e.SessionID
+				w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("session_id", e.SessionID)
+			}
+			return
+		}
+		line := FormatEvent(e)
+		scan.Log += line + "\n"
+		w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("log", scan.Log)
+		if e.Kind == KindResult {
+			scan.CostUSD = e.CostUSD
+			scan.Turns = e.Turns
+			scan.InputTokens = e.Usage.InputTokens
+			scan.OutputTokens = e.Usage.OutputTokens
+			scan.CacheReadTokens = e.Usage.CacheReadTokens
+			scan.CacheWriteTokens = e.Usage.CacheWriteTokens
+		}
+		w.publish(scan.ID, scan.RepositoryID, "scan-log", line+"\n")
+	}
+}
+
+// clearSessionStore wipes a finished scan's resume state so its next
+// deliberate re-run starts fresh: it drops the session id and tears down the
+// persisted claude session store. Only called on "done" — a failed scan
+// keeps both so a UI retry can --resume instead of restarting from turn 0.
+func (w *Worker) clearSessionStore(scan *db.Scan) {
+	scan.SessionID = ""
+	if rmErr := os.RemoveAll(w.claudeConfigDir(scan)); rmErr != nil {
+		w.Log.Warn("session store cleanup failed", "scan", scan.ID, "err", rmErr)
+	}
+}
+
 func (w *Worker) Register(q *queue.Queue) {
 	q.Register(JobSkill, w.wrap(w.doSkill))
 	q.Register(JobExposure, w.wrap(w.doExposure))
@@ -184,33 +226,7 @@ func (w *Worker) wrap(h handler) func(context.Context, []byte) error {
 			return err
 		}
 
-		emit := func(e Event) {
-			// Session events carry no log line; they exist to persist the
-			// claude session id the moment it appears so a crash mid-run
-			// leaves the scan resumable. Keep the in-memory struct in sync
-			// too: wrap's final Save(&scan) writes every column and would
-			// otherwise clobber the column-only update below with a stale
-			// (empty) value.
-			if e.Kind == KindSession {
-				if e.SessionID != "" && e.SessionID != scan.SessionID {
-					scan.SessionID = e.SessionID
-					w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("session_id", e.SessionID)
-				}
-				return
-			}
-			line := FormatEvent(e)
-			scan.Log += line + "\n"
-			w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("log", scan.Log)
-			if e.Kind == KindResult {
-				scan.CostUSD = e.CostUSD
-				scan.Turns = e.Turns
-				scan.InputTokens = e.Usage.InputTokens
-				scan.OutputTokens = e.Usage.OutputTokens
-				scan.CacheReadTokens = e.Usage.CacheReadTokens
-				scan.CacheWriteTokens = e.Usage.CacheWriteTokens
-			}
-			w.publish(scan.ID, scan.RepositoryID, "scan-log", line+"\n")
-		}
+		emit := w.scanEmitter(&scan)
 
 		report, err := h(ctx, &scan, emit)
 
@@ -247,15 +263,8 @@ func (w *Worker) wrap(h handler) func(context.Context, []byte) error {
 			scan.Status = db.ScanDone
 			scan.Report = report
 		}
-		// A finished scan starts fresh on its next deliberate re-run, so
-		// drop the resume session id and tear down its persisted claude
-		// session store. A failed scan keeps both so a UI retry can
-		// --resume the conversation instead of restarting from turn 0.
 		if scan.Status == db.ScanDone {
-			scan.SessionID = ""
-			if rmErr := os.RemoveAll(w.claudeConfigDir(&scan)); rmErr != nil {
-				w.Log.Warn("session store cleanup failed", "scan", scan.ID, "err", rmErr)
-			}
+			w.clearSessionStore(&scan)
 		}
 		scan.StatusPriority = db.StatusPriorityFor(scan.Status)
 		if saveErr := w.DB.Save(&scan).Error; saveErr != nil {
