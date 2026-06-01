@@ -122,12 +122,16 @@ func (d DockerRunner) RunSkill(ctx context.Context, sj SkillJob, emit func(Event
 		_ = os.Remove(outPath)
 	}
 
+	// docker treats a non-absolute -v source as a named volume (which
+	// rejects '/'), so the config dir must be absolutised like absWork.
+	var absConfig string
 	if sj.ClaudeConfigDir != "" {
-		if err := os.MkdirAll(sj.ClaudeConfigDir, dirPerm); err != nil {
+		absConfig, _ = filepath.Abs(sj.ClaudeConfigDir)
+		if err := os.MkdirAll(absConfig, dirPerm); err != nil {
 			return SkillResult{Commit: commit, Profile: profile}, fmt.Errorf("create claude config dir: %w", err)
 		}
 	}
-	dockerBase := d.buildDockerArgs(absWork, image, perScanNetwork, sj.ClaudeConfigDir)
+	dockerBase := d.buildDockerArgs(absWork, image, perScanNetwork, absConfig)
 
 	logLine := "$ docker run --rm " + image + " <skill:" + sj.Name + ">"
 	if d.AnthropicBaseURL != "" {
