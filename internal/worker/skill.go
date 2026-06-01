@@ -568,6 +568,10 @@ func validateSkillPaths(name, outputFile string) error {
 //
 // schema.json is also written to workRoot so the `./schema.json` path every
 // SKILL.md references resolves without the model having to glob for it (#221).
+// For the same reason the skill's scripts/ directory is mirrored into workRoot
+// so the `bash scripts/foo` / `python3 scripts/foo` invocations every SKILL.md
+// documents resolve from the workspace root (CWD), instead of the model having
+// to discover the staged copy under ./.claude/skills/{name}/scripts.
 func stageSkill(skill *db.Skill, workRoot, dst string) error {
 	if err := os.RemoveAll(dst); err != nil {
 		return err
@@ -592,7 +596,44 @@ func stageSkill(skill *db.Skill, workRoot, dst string) error {
 			return fmt.Errorf("copy aux files: %w", err)
 		}
 	}
+	if err := mirrorScripts(dst, workRoot); err != nil {
+		return fmt.Errorf("mirror scripts to work root: %w", err)
+	}
 	return nil
+}
+
+// mirrorScripts copies the staged skill's scripts/ directory (if any) to
+// workRoot/scripts so the `scripts/foo` paths SKILL.md bodies invoke resolve
+// from the workspace root, where both runners set CWD. Executable mode is
+// preserved so a direct `./scripts/foo` also works. UI-only skills carry no
+// scripts and are a clean no-op.
+func mirrorScripts(skillDir, workRoot string) error {
+	src := filepath.Join(skillDir, "scripts")
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	dst := filepath.Join(workRoot, "scripts")
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, dirPerm)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, info.Mode())
+	})
 }
 
 // renderSkillMD rebuilds a SKILL.md from the stored fields. The frontmatter

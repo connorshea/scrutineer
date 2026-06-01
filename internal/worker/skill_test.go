@@ -310,6 +310,62 @@ func TestStageSkill_writesMarkdownAndSchema(t *testing.T) {
 	}
 }
 
+func TestStageSkill_mirrorsScriptsToWorkRoot(t *testing.T) {
+	// A disk-sourced skill bundles scripts/. stageSkill must mirror them
+	// into workRoot/scripts so the `bash scripts/foo` path every SKILL.md
+	// documents resolves from the workspace root (CWD), not just under
+	// ./.claude/skills/{name}/scripts (#290).
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: s\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "generate.sh"), []byte("#!/usr/bin/env bash\necho hi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	work := t.TempDir()
+	dir := filepath.Join(work, ".claude", "skills", "s")
+	skill := &db.Skill{
+		Name:        "s",
+		Description: "d",
+		Body:        "body",
+		Source:      "disk",
+		SourcePath:  srcDir,
+	}
+	if err := stageSkill(skill, work, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Staged copy still lives under the skill dir.
+	if _, err := os.Stat(filepath.Join(dir, "scripts", "generate.sh")); err != nil {
+		t.Fatalf("script not staged under skill dir: %v", err)
+	}
+	// And is mirrored to the work root so `scripts/generate.sh` resolves there.
+	info, err := os.Stat(filepath.Join(work, "scripts", "generate.sh"))
+	if err != nil {
+		t.Fatalf("script not mirrored to work root: %v", err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("mirrored script lost executable bit: %v", info.Mode())
+	}
+}
+
+func TestStageSkill_noScriptsIsNoOp(t *testing.T) {
+	// UI-only skills carry no scripts; mirroring must be a clean no-op.
+	work := t.TempDir()
+	dir := filepath.Join(work, ".claude", "skills", "s")
+	skill := &db.Skill{Name: "s", Description: "d", Body: "body", Source: "ui"}
+	if err := stageSkill(skill, work, dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "scripts")); !os.IsNotExist(err) {
+		t.Errorf("expected no scripts dir at work root, got err=%v", err)
+	}
+}
+
 func TestStageContext_includesRef(t *testing.T) {
 	dir := t.TempDir()
 	repo := &db.Repository{URL: "https://example.com/x", Name: "x"}
