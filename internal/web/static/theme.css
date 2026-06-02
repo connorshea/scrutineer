@@ -408,3 +408,13 @@ pre.log { background: var(--muted); padding: 1rem; border-radius: var(--radius);
 .hl-on { background: color-mix(in oklch, var(--primary) 14%, transparent); }
 .hl-line:target { background: color-mix(in oklch, var(--primary) 14%, transparent); }
 
+/* ── reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
