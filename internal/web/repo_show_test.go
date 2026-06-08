@@ -89,6 +89,45 @@ func TestRepoShow_threatModelTab_prefersThreatModelSkill(t *testing.T) {
 	}
 }
 
+func TestRepoShow_dependenciesTab_linksManifests(t *testing.T) {
+	s, done := newTestServer(t)
+	defer done()
+	repo := db.Repository{URL: "https://example.com/r", Name: "r"}
+	s.DB.Create(&repo)
+	skill := db.Skill{Name: "dependencies", OutputKind: "dependencies"}
+	s.DB.Create(&skill)
+	s.DB.Create(&db.Scan{RepositoryID: repo.ID, Kind: "skill", Status: db.ScanDone,
+		SkillID: &skill.ID, SkillName: "dependencies", Commit: "deadbee"})
+	s.DB.Create(&db.Dependency{RepositoryID: repo.ID, Name: "left-pad", Ecosystem: "npm",
+		Requirement: "^1.0.0", DependencyType: "direct",
+		ManifestPath: "app/package.json", ManifestKind: "manifest"})
+
+	body := getRepoPage(t, s, repo.ID)
+	want := fmt.Sprintf(`href="/repositories/%d/blob/deadbee/app/package.json"`, repo.ID)
+	if !strings.Contains(body, want) {
+		t.Errorf("dependencies tab missing manifest code-browser link %q", want)
+	}
+}
+
+func TestRepoShow_dependenciesTab_plainManifestWithoutDoneScan(t *testing.T) {
+	s, done := newTestServer(t)
+	defer done()
+	repo := db.Repository{URL: "https://example.com/r", Name: "r"}
+	s.DB.Create(&repo)
+	// Dependency rows exist but no completed dependencies scan provides a
+	// commit to pin the blob link to, so the path renders as plain text.
+	s.DB.Create(&db.Dependency{RepositoryID: repo.ID, Name: "left-pad", Ecosystem: "npm",
+		ManifestPath: "package.json", ManifestKind: "manifest"})
+
+	body := getRepoPage(t, s, repo.ID)
+	if strings.Contains(body, "/blob/") {
+		t.Errorf("expected no manifest blob link without a completed dependencies scan")
+	}
+	if !strings.Contains(body, "package.json") {
+		t.Errorf("expected manifest path to still render as text")
+	}
+}
+
 func TestRepoShow_threatModelTab_fallsBackWhenSkillScanRunning(t *testing.T) {
 	s, done := newTestServer(t)
 	defer done()

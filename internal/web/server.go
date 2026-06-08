@@ -1509,6 +1509,11 @@ func (s *Server) repoShow(w http.ResponseWriter, r *http.Request) {
 	s.DB.Where("repository_id = ?", repo.ID).Order("ecosystem, name, manifest_kind desc").Find(&rawDeps)
 	deps := groupDeps(rawDeps)
 
+	var depsCommit string
+	if len(deps) > 0 {
+		depsCommit = s.latestDepsCommit(repo.ID)
+	}
+
 	var pkgs []db.Package
 	s.DB.Where("repository_id = ?", repo.ID).Order("dependent_repos desc, downloads desc").Find(&pkgs)
 
@@ -1576,6 +1581,7 @@ func (s *Server) repoShow(w http.ResponseWriter, r *http.Request) {
 		"TotalCost":       totalCost,
 		"DiskBytes":       worker.RepoDiskUsage(s.Worker.DataDir, repo),
 		"TMCommit":        tmCommit,
+		"DepsCommit":      depsCommit,
 		"Deps":            deps, "Pkgs": pkgs, "Dependents": dependents, "Advisories": advisories, "Maintainers": maintainers, "ThreatModel": threatModel,
 		"KnownURLs": knownURLs, "KnownPURLs": knownPURLs,
 		"Skills":        activeSkills,
@@ -1586,6 +1592,27 @@ func (s *Server) repoShow(w http.ResponseWriter, r *http.Request) {
 		"Uncategorized": UncategorizedCWE,
 	}
 	s.render(w, r, "repo_show.html", data)
+}
+
+// latestDepsCommit returns the commit of the latest successful dependencies
+// scan: the run that owns the current Dependency rows (parseDependenciesOutput
+// replaces them wholesale per repo). git-pkgs runs at the clone root, so
+// manifest paths are repo-root-relative and resolve through the blob route at
+// this commit; the Manifests column links to the in-app code browser when it's
+// set. Returns "" when no such commit is recorded.
+func (s *Server) latestDepsCommit(repoID uint) string {
+	var commits []string
+	s.DB.Model(&db.Scan{}).
+		Joins("JOIN skills ON skills.id = scans.skill_id").
+		Where("scans.repository_id = ? AND skills.output_kind = ? AND scans.status = ? AND scans.`commit` <> ''",
+			repoID, "dependencies", db.ScanDone).
+		Order("scans.id DESC").
+		Limit(1).
+		Pluck("scans.commit", &commits)
+	if len(commits) > 0 {
+		return commits[0]
+	}
+	return ""
 }
 
 func (s *Server) repoScan(w http.ResponseWriter, r *http.Request) {
