@@ -24,11 +24,8 @@ func validateFindingField(field, value string) error {
 	if value == "" {
 		return nil
 	}
-	switch field {
-	case "ghsa_id":
-		if !ghsaIDRE.MatchString(value) {
-			return fmt.Errorf("ghsa_id %q is not a valid GHSA id (expected GHSA-xxxx-xxxx-xxxx)", value)
-		}
+	if field == "ghsa_id" && !ghsaIDRE.MatchString(value) {
+		return fmt.Errorf("ghsa_id %q is not a valid GHSA id (expected GHSA-xxxx-xxxx-xxxx)", value)
 	}
 	return nil
 }
