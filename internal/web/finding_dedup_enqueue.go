@@ -11,8 +11,8 @@ import (
 // See skills/finding-dedup/SKILL.md.
 const findingDedupSkillName = "finding-dedup"
 
-// autoEnqueueFindingDedupAfterDeepDive is wired onto Worker.OnScanDone. The
-// worker calls it once after a scan completes and its findings are
+// autoEnqueueFindingDedupAfterDeepDive is wired onto Worker.OnScanFinalized.
+// The worker calls it once after a scan completes and its findings are
 // committed. We enqueue a repository-scoped finding-dedup run only when both
 // conditions the dedup pass needs to be worth its model spend hold:
 //
@@ -20,10 +20,11 @@ const findingDedupSkillName = "finding-dedup"
 //     finding. Re-observed findings keep the scan_id of the run that first
 //     created them, so counting findings with scan_id == this scan counts
 //     exactly the new rows. Nothing new means nothing fresh to dedup.
-//  2. The repository already held other non-scanner findings before this
-//     scan — open deep-dive/legacy/manual rows from a prior scan, an import
-//     of that kind, or a manual entry. Without something else to compare
-//     the new findings against, dedup has no pairs to consider.
+//  2. The repository now holds at least two open non-scanner findings in
+//     total (the new rows count toward this). Dedup needs a pair to compare,
+//     but the pair need not predate this scan: a first-ever deep-dive that
+//     emits several findings describing the same bug from different subagent
+//     angles is exactly what dedup exists to collapse.
 //
 // "Non-scanner" matches the Findings-tab toggle exactly (nonScannerScanFilter):
 // the cheap tool scanners (semgrep, zizmor) and tool imports (CodeQL, Snyk)
@@ -50,17 +51,17 @@ func (s *Server) autoEnqueueFindingDedupAfterDeepDive(scan *db.Scan) {
 		return
 	}
 
-	var otherNonScanner int64
+	var openNonScanner int64
 	if err := s.DB.Model(&db.Finding{}).
-		Where("repository_id = ? AND scan_id <> ?", scan.RepositoryID, scan.ID).
+		Where("repository_id = ?", scan.RepositoryID).
 		Where(nonScannerScanFilter, deepDiveSkillName).
 		Where("status NOT IN (" + db.ClosedFindingLifecycleSQLValues() + ")").
-		Count(&otherNonScanner).Error; err != nil {
-		s.Log.Warn("auto-enqueue finding-dedup: count existing findings",
+		Count(&openNonScanner).Error; err != nil {
+		s.Log.Warn("auto-enqueue finding-dedup: count open findings",
 			"scan", scan.ID, "repo", scan.RepositoryID, "err", err)
 		return
 	}
-	if otherNonScanner == 0 {
+	if openNonScanner < 2 {
 		return
 	}
 

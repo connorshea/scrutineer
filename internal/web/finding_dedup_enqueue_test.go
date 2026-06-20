@@ -40,69 +40,76 @@ func dedupQueued(s *Server, repoID, dedupID uint) int64 {
 }
 
 // TestAutoEnqueueFindingDedup_conditions covers the two gating conditions:
-// the deep dive must produce at least one new finding, and the repo must
-// already hold another open non-scanner finding to compare against.
+// the deep dive must produce at least one new finding, and the repo must end
+// up with at least two open non-scanner findings to compare against (the new
+// rows count, so a first-ever deep-dive emitting several findings qualifies).
 func TestAutoEnqueueFindingDedup_conditions(t *testing.T) {
 	cases := []struct {
 		name string
 		// scanSkill is the skill the just-completed scan ran.
 		scanSkill string
-		// newFinding controls whether a fresh finding is attached to the
-		// completed scan (condition 1).
-		newFinding bool
+		// newFindings is how many fresh findings are attached to the
+		// completed scan (condition 1 needs at least one).
+		newFindings int
 		// hasPrior, when set, creates a pre-existing finding from an earlier
-		// scan described by priorSkill/priorStatus (condition 2).
+		// scan described by priorSkill/priorStatus (counts toward condition 2).
 		hasPrior    bool
 		priorSkill  string
 		priorStatus db.FindingLifecycle
 		wantQueued  bool
 	}{
 		{
-			name:       "deep-dive new finding with prior open non-scanner finding",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
+			name:        "deep-dive new finding with prior open non-scanner finding",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
 			wantQueued: true,
 		},
 		{
-			name:       "prior legacy (empty skill) finding also counts",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: true, priorSkill: "", priorStatus: db.FindingNew,
+			name:        "first-ever deep-dive emitting two new findings",
+			scanSkill:   "security-deep-dive",
+			newFindings: 2, hasPrior: false,
 			wantQueued: true,
 		},
 		{
-			name:       "no new finding does not enqueue",
-			scanSkill:  "security-deep-dive",
-			newFinding: false, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
+			name:        "prior legacy (empty skill) finding also counts",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: true, priorSkill: "", priorStatus: db.FindingNew,
+			wantQueued: true,
+		},
+		{
+			name:        "no new finding does not enqueue",
+			scanSkill:   "security-deep-dive",
+			newFindings: 0, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
 			wantQueued: false,
 		},
 		{
-			name:       "no prior non-scanner finding does not enqueue",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: false,
+			name:        "single new finding with no other does not enqueue",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: false,
 			wantQueued: false,
 		},
 		{
-			name:       "prior scanner finding does not count",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: true, priorSkill: "semgrep", priorStatus: db.FindingNew,
+			name:        "prior scanner finding does not count",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: true, priorSkill: "semgrep", priorStatus: db.FindingNew,
 			wantQueued: false,
 		},
 		{
-			name:       "prior import finding does not count",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: true, priorSkill: "CodeQL", priorStatus: db.FindingNew,
+			name:        "prior import finding does not count",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: true, priorSkill: "CodeQL", priorStatus: db.FindingNew,
 			wantQueued: false,
 		},
 		{
-			name:       "prior closed non-scanner finding does not count",
-			scanSkill:  "security-deep-dive",
-			newFinding: true, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingDuplicate,
+			name:        "prior closed non-scanner finding does not count",
+			scanSkill:   "security-deep-dive",
+			newFindings: 1, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingDuplicate,
 			wantQueued: false,
 		},
 		{
-			name:       "non-deep-dive scan does not enqueue",
-			scanSkill:  "semgrep",
-			newFinding: true, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
+			name:        "non-deep-dive scan does not enqueue",
+			scanSkill:   "semgrep",
+			newFindings: 1, hasPrior: true, priorSkill: "security-deep-dive", priorStatus: db.FindingNew,
 			wantQueued: false,
 		},
 	}
@@ -118,7 +125,7 @@ func TestAutoEnqueueFindingDedup_conditions(t *testing.T) {
 			}
 
 			scan := newScan(t, s, repoID, c.scanSkill)
-			if c.newFinding {
+			for i := 0; i < c.newFindings; i++ {
 				newFindingUnder(t, s, repoID, scan.ID, db.FindingNew)
 			}
 
