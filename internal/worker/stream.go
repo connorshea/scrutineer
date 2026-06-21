@@ -212,6 +212,9 @@ func FormatEvent(e Event) string {
 		if u.CacheWriteTokens > 0 {
 			fmt.Fprintf(&b, " cache_write=%d", u.CacheWriteTokens)
 		}
+		if ctx := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens; ctx > 0 {
+			fmt.Fprintf(&b, " ctx=%d", ctx)
+		}
 		if t := truncate(e.Text); t != "" {
 			fmt.Fprintf(&b, " %s", t)
 		}
