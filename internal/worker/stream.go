@@ -135,7 +135,7 @@ func emitAssistant(m *assistantMsg, emit func(Event)) {
 				emit(Event{Kind: KindText, Text: b.Text})
 			}
 		case "tool_use":
-			emit(Event{Kind: KindTool, Tool: b.Name, Text: summariseInput(b.Name, b.Input)})
+			emit(Event{Kind: KindTool, Tool: b.Name, Text: summariseInput(b.Name, b.Input), Size: len(b.Input)})
 		}
 	}
 }

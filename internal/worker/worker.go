@@ -260,6 +260,9 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	lastFlush := time.Now()
 	toolCounts := map[string]int{}
 	thinkCount := 0
+	thinkChars := 0
+	textChars := 0
+	toolInputChars := 0
 	totalResultChars := 0
 
 	appendLine := func(line string) {
@@ -281,9 +284,14 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 		}
 		if e.Kind == KindThinking {
 			thinkCount++
+			thinkChars += len(e.Text)
+		}
+		if e.Kind == KindText {
+			textChars += len(e.Text)
 		}
 		if e.Kind == KindTool && e.Tool != "" {
 			toolCounts[e.Tool]++
+			toolInputChars += e.Size
 		}
 		if e.Kind == KindToolResult {
 			totalResultChars += e.Size
@@ -291,10 +299,14 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 		if e.Kind == KindResult {
 			if thinkCount > 0 || len(toolCounts) > 0 || totalResultChars > 0 {
 				appendLine(formatToolSummary(thinkCount, toolCounts, totalResultChars))
-				thinkCount = 0
-				toolCounts = map[string]int{}
-				totalResultChars = 0
 			}
+			appendLine(formatContextBreakdown(len(scan.Prompt), thinkChars, textChars, toolInputChars, totalResultChars))
+			thinkCount = 0
+			thinkChars = 0
+			textChars = 0
+			toolInputChars = 0
+			totalResultChars = 0
+			toolCounts = map[string]int{}
 			scan.CostUSD += e.CostUSD
 			scan.Turns += e.Turns
 			scan.InputTokens += e.Usage.InputTokens
@@ -335,6 +347,29 @@ func formatToolSummary(thinkCount int, counts map[string]int, totalResultChars i
 		parts = append(parts, "results="+formatChars(totalResultChars))
 	}
 	return "[tools] " + strings.Join(parts, " ")
+}
+
+// formatContextBreakdown renders a one-line char-count breakdown of what
+// is accumulating in the context window, by category.
+func formatContextBreakdown(promptChars, thinkChars, textChars, toolInputChars, resultChars int) string {
+	type kv struct {
+		label string
+		n     int
+	}
+	cats := []kv{
+		{"prompt", promptChars},
+		{"think", thinkChars},
+		{"text", textChars},
+		{"tool_calls", toolInputChars},
+		{"tool_results", resultChars},
+	}
+	parts := make([]string, 0, len(cats))
+	for _, c := range cats {
+		if c.n > 0 {
+			parts = append(parts, c.label+"="+formatChars(c.n))
+		}
+	}
+	return "[context] " + strings.Join(parts, " ")
 }
 
 // clearSessionStore wipes a finished scan's resume state so its next
