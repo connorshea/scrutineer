@@ -263,6 +263,12 @@ func buildClaudeArgs(sj SkillJob, effort string, globalMaxTurns int) []string {
 		"-p",
 		"--output-format", "stream-json",
 		"--verbose",
+		// Move per-run dynamic sections (cwd, env info, git status) from the
+		// system prompt into the first user message. Each scan runs in a
+		// unique workspace directory, so without this flag the system prompt
+		// cache key is different for every scan and cross-scan cache reuse is
+		// impossible.
+		"--exclude-dynamic-system-prompt-sections",
 		"--model", sj.Model,
 	}
 	if sj.AllowedTools != "" {

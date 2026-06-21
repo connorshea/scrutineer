@@ -293,6 +293,7 @@ func run(log *slog.Logger) error {
 	// hosts these reach (DataDog log-intake, metrics.semgrep.dev) so
 	// without this the operator just sees denied-CONNECT noise.
 	_ = os.Setenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+	_ = os.Setenv("DISABLE_NON_ESSENTIAL_MODEL_CALLS", "1")
 	_ = os.Setenv("SEMGREP_SEND_METRICS", "off")
 
 	if f.anthropicBaseURL == "" {
