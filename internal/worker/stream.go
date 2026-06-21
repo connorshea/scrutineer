@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	KindThinking = "thinking"
-	KindText     = "text"
-	KindTool     = "tool"
-	KindResult   = "result"
-	KindError    = "error"
-	KindSession  = "session"
+	KindThinking   = "thinking"
+	KindText       = "text"
+	KindTool       = "tool"
+	KindToolResult = "tool_result"
+	KindResult     = "result"
+	KindError      = "error"
+	KindSession    = "session"
 
 	lineLimit = 300
 )
@@ -30,6 +31,7 @@ type Event struct {
 	DurationMS int64   // for KindResult
 	Usage      Usage   // for KindResult
 	SessionID  string  // for KindSession
+	Size       int     // for KindToolResult: char count of the tool result content
 }
 
 // Usage is the token breakdown from a result event.
@@ -58,11 +60,13 @@ type assistantMsg struct {
 }
 
 type contentBlock struct {
-	Type     string          `json:"type"`
-	Thinking string          `json:"thinking"`
-	Text     string          `json:"text"`
-	Name     string          `json:"name"`
-	Input    json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Thinking  string          `json:"thinking"`
+	Text      string          `json:"text"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"` // tool_result: string or []content block
 }
 
 // ParseStream reads claude --output-format stream-json lines from r and
@@ -99,6 +103,8 @@ func ParseStream(r io.Reader, emit func(Event)) {
 			}
 		case "assistant":
 			emitAssistant(msg.Message, emit)
+		case "user":
+			emitUser(msg.Message, emit)
 		case "result":
 			emit(resultEvent(msg))
 			if msg.Subtype == "error_max_turns" {
@@ -132,6 +138,49 @@ func emitAssistant(m *assistantMsg, emit func(Event)) {
 			emit(Event{Kind: KindTool, Tool: b.Name, Text: summariseInput(b.Name, b.Input)})
 		}
 	}
+}
+
+func emitUser(m *assistantMsg, emit func(Event)) {
+	if m == nil {
+		return
+	}
+	for _, b := range m.Content {
+		if b.Type == "tool_result" {
+			n := toolResultChars(b.Content)
+			emit(Event{Kind: KindToolResult, Size: n, Text: formatChars(n)})
+		}
+	}
+}
+
+// toolResultChars returns the character count of a tool result's content field,
+// which can be either a JSON string or an array of text content blocks.
+func toolResultChars(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return len(s)
+	}
+	var blocks []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) == nil {
+		n := 0
+		for _, b := range blocks {
+			n += len(b.Text)
+		}
+		return n
+	}
+	return len(raw)
+}
+
+// formatChars renders a character count as "842 chars" or "12.1k chars".
+func formatChars(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%.1fk chars", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d chars", n)
 }
 
 func resultEvent(msg streamMessage) Event {
@@ -196,6 +245,8 @@ func FormatEvent(e Event) string {
 		return "[thinking] " + truncate(e.Text)
 	case KindTool:
 		return fmt.Sprintf("[%s] %s", strings.ToLower(e.Tool), truncate(e.Text))
+	case KindToolResult:
+		return "[tool-result] " + e.Text
 	case KindResult:
 		var b strings.Builder
 		fmt.Fprintf(&b, "[result] cost=$%.4f turns=%d", e.CostUSD, e.Turns)

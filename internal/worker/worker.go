@@ -260,6 +260,7 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	lastFlush := time.Now()
 	toolCounts := map[string]int{}
 	thinkCount := 0
+	totalResultChars := 0
 
 	appendLine := func(line string) {
 		scan.Log += line + "\n"
@@ -284,11 +285,15 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 		if e.Kind == KindTool && e.Tool != "" {
 			toolCounts[e.Tool]++
 		}
+		if e.Kind == KindToolResult {
+			totalResultChars += e.Size
+		}
 		if e.Kind == KindResult {
-			if thinkCount > 0 || len(toolCounts) > 0 {
-				appendLine(formatToolSummary(thinkCount, toolCounts))
+			if thinkCount > 0 || len(toolCounts) > 0 || totalResultChars > 0 {
+				appendLine(formatToolSummary(thinkCount, toolCounts, totalResultChars))
 				thinkCount = 0
 				toolCounts = map[string]int{}
+				totalResultChars = 0
 			}
 			scan.CostUSD += e.CostUSD
 			scan.Turns += e.Turns
@@ -301,10 +306,10 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	}
 }
 
-// formatToolSummary renders a one-line breakdown of thinking block count and
-// tool call counts, sorted by frequency descending, for injection into the
-// scan log before each result.
-func formatToolSummary(thinkCount int, counts map[string]int) string {
+// formatToolSummary renders a one-line breakdown of thinking block count,
+// tool call counts, and total tool result size, for injection into the scan
+// log before each result.
+func formatToolSummary(thinkCount int, counts map[string]int, totalResultChars int) string {
 	type kv struct {
 		tool  string
 		count int
@@ -319,12 +324,15 @@ func formatToolSummary(thinkCount int, counts map[string]int) string {
 		}
 		return strings.Compare(a.tool, b.tool)
 	})
-	parts := make([]string, 0, 1+len(pairs))
+	parts := make([]string, 0, 2+len(pairs))
 	if thinkCount > 0 {
 		parts = append(parts, fmt.Sprintf("think=%d", thinkCount))
 	}
 	for _, p := range pairs {
 		parts = append(parts, fmt.Sprintf("%s×%d", p.tool, p.count))
+	}
+	if totalResultChars > 0 {
+		parts = append(parts, "results="+formatChars(totalResultChars))
 	}
 	return "[tools] " + strings.Join(parts, " ")
 }
