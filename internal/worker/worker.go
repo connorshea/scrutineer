@@ -259,6 +259,7 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	interval := w.logFlushInterval()
 	lastFlush := time.Now()
 	toolCounts := map[string]int{}
+	thinkCount := 0
 
 	appendLine := func(line string) {
 		scan.Log += line + "\n"
@@ -277,12 +278,16 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 			}
 			return
 		}
+		if e.Kind == KindThinking {
+			thinkCount++
+		}
 		if e.Kind == KindTool && e.Tool != "" {
 			toolCounts[e.Tool]++
 		}
 		if e.Kind == KindResult {
-			if len(toolCounts) > 0 {
-				appendLine(formatToolSummary(toolCounts))
+			if thinkCount > 0 || len(toolCounts) > 0 {
+				appendLine(formatToolSummary(thinkCount, toolCounts))
+				thinkCount = 0
 				toolCounts = map[string]int{}
 			}
 			scan.CostUSD += e.CostUSD
@@ -296,9 +301,10 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	}
 }
 
-// formatToolSummary renders a one-line breakdown of tool call counts, sorted
-// by frequency descending, for injection into the scan log before each result.
-func formatToolSummary(counts map[string]int) string {
+// formatToolSummary renders a one-line breakdown of thinking block count and
+// tool call counts, sorted by frequency descending, for injection into the
+// scan log before each result.
+func formatToolSummary(thinkCount int, counts map[string]int) string {
 	type kv struct {
 		tool  string
 		count int
@@ -313,9 +319,12 @@ func formatToolSummary(counts map[string]int) string {
 		}
 		return strings.Compare(a.tool, b.tool)
 	})
-	parts := make([]string, len(pairs))
-	for i, p := range pairs {
-		parts[i] = fmt.Sprintf("%s×%d", p.tool, p.count)
+	parts := make([]string, 0, 1+len(pairs))
+	if thinkCount > 0 {
+		parts = append(parts, fmt.Sprintf("think=%d", thinkCount))
+	}
+	for _, p := range pairs {
+		parts = append(parts, fmt.Sprintf("%s×%d", p.tool, p.count))
 	}
 	return "[tools] " + strings.Join(parts, " ")
 }
