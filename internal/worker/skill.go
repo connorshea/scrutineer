@@ -760,6 +760,8 @@ func validateSkillPaths(name, outputFile string) error {
 //
 // schema.json is also written to workRoot so the `./schema.json` path every
 // SKILL.md references resolves without the model having to glob for it (#221).
+// context.json is mirrored from workRoot into dst so `./context.json` resolves
+// from the skill directory as well as the workspace root.
 func stageSkill(skill *db.Skill, workRoot, dst string) error {
 	if err := os.RemoveAll(dst); err != nil {
 		return err
@@ -777,6 +779,11 @@ func stageSkill(skill *db.Skill, workRoot, dst string) error {
 		}
 		if err := os.WriteFile(filepath.Join(workRoot, "schema.json"), []byte(skill.SchemaJSON), filePerm); err != nil {
 			return err
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(workRoot, "context.json")); err == nil {
+		if werr := os.WriteFile(filepath.Join(dst, "context.json"), data, filePerm); werr != nil {
+			return werr
 		}
 	}
 	if skill.SourcePath != "" && skill.Source != "ui" {
