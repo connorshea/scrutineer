@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -256,6 +258,17 @@ func (w *Worker) applyResume(scan *db.Scan, sj *SkillJob, emit func(Event)) {
 func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 	interval := w.logFlushInterval()
 	lastFlush := time.Now()
+	toolCounts := map[string]int{}
+
+	appendLine := func(line string) {
+		scan.Log += line + "\n"
+		if time.Since(lastFlush) >= interval {
+			w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("log", scan.Log)
+			lastFlush = time.Now()
+		}
+		w.publish(scan.ID, scan.RepositoryID, "scan-log", line+"\n")
+	}
+
 	return func(e Event) {
 		if e.Kind == KindSession {
 			if e.SessionID != "" && e.SessionID != scan.SessionID {
@@ -264,13 +277,14 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 			}
 			return
 		}
-		line := FormatEvent(e)
-		scan.Log += line + "\n"
-		if time.Since(lastFlush) >= interval {
-			w.DB.Model(&db.Scan{}).Where("id = ?", scan.ID).Update("log", scan.Log)
-			lastFlush = time.Now()
+		if e.Kind == KindTool && e.Tool != "" {
+			toolCounts[e.Tool]++
 		}
 		if e.Kind == KindResult {
+			if len(toolCounts) > 0 {
+				appendLine(formatToolSummary(toolCounts))
+				toolCounts = map[string]int{}
+			}
 			scan.CostUSD += e.CostUSD
 			scan.Turns += e.Turns
 			scan.InputTokens += e.Usage.InputTokens
@@ -278,8 +292,32 @@ func (w *Worker) scanEmitter(scan *db.Scan) func(Event) {
 			scan.CacheReadTokens += e.Usage.CacheReadTokens
 			scan.CacheWriteTokens += e.Usage.CacheWriteTokens
 		}
-		w.publish(scan.ID, scan.RepositoryID, "scan-log", line+"\n")
+		appendLine(FormatEvent(e))
 	}
+}
+
+// formatToolSummary renders a one-line breakdown of tool call counts, sorted
+// by frequency descending, for injection into the scan log before each result.
+func formatToolSummary(counts map[string]int) string {
+	type kv struct {
+		tool  string
+		count int
+	}
+	pairs := make([]kv, 0, len(counts))
+	for t, c := range counts {
+		pairs = append(pairs, kv{t, c})
+	}
+	slices.SortFunc(pairs, func(a, b kv) int {
+		if d := b.count - a.count; d != 0 {
+			return d
+		}
+		return strings.Compare(a.tool, b.tool)
+	})
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = fmt.Sprintf("%s×%d", p.tool, p.count)
+	}
+	return "[tools] " + strings.Join(parts, " ")
 }
 
 // clearSessionStore wipes a finished scan's resume state so its next

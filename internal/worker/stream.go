@@ -22,13 +22,14 @@ const (
 // Event is one line of activity from a claude -p stream-json run, flattened
 // into something a human can read in a log view.
 type Event struct {
-	Kind      string
-	Tool      string // for KindTool
-	Text      string
-	CostUSD   float64 // for KindResult
-	Turns     int     // for KindResult
-	Usage     Usage   // for KindResult
-	SessionID string  // for KindSession
+	Kind       string
+	Tool       string  // for KindTool
+	Text       string
+	CostUSD    float64 // for KindResult
+	Turns      int     // for KindResult
+	DurationMS int64   // for KindResult
+	Usage      Usage   // for KindResult
+	SessionID  string  // for KindSession
 }
 
 // Usage is the token breakdown from a result event.
@@ -149,6 +150,9 @@ func resultEvent(msg streamMessage) Event {
 	if msg.NumTurns != nil {
 		ev.Turns = *msg.NumTurns
 	}
+	if msg.Duration != nil {
+		ev.DurationMS = *msg.Duration
+	}
 	if msg.Usage != nil {
 		ev.Usage = *msg.Usage
 	}
@@ -193,7 +197,25 @@ func FormatEvent(e Event) string {
 	case KindTool:
 		return fmt.Sprintf("[%s] %s", strings.ToLower(e.Tool), truncate(e.Text))
 	case KindResult:
-		return fmt.Sprintf("[result] cost=$%.4f turns=%d %s", e.CostUSD, e.Turns, truncate(e.Text))
+		var b strings.Builder
+		fmt.Fprintf(&b, "[result] cost=$%.4f turns=%d", e.CostUSD, e.Turns)
+		if e.DurationMS > 0 {
+			fmt.Fprintf(&b, " dur=%ds", e.DurationMS/1000)
+		}
+		u := e.Usage
+		if u.InputTokens > 0 || u.OutputTokens > 0 {
+			fmt.Fprintf(&b, " in=%d out=%d", u.InputTokens, u.OutputTokens)
+		}
+		if u.CacheReadTokens > 0 {
+			fmt.Fprintf(&b, " cache_read=%d", u.CacheReadTokens)
+		}
+		if u.CacheWriteTokens > 0 {
+			fmt.Fprintf(&b, " cache_write=%d", u.CacheWriteTokens)
+		}
+		if t := truncate(e.Text); t != "" {
+			fmt.Fprintf(&b, " %s", t)
+		}
+		return b.String()
 	case KindSession:
 		return "[session] " + e.SessionID
 	case KindError:

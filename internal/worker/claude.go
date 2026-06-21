@@ -139,6 +139,11 @@ func (l LocalClaude) RunSkill(ctx context.Context, sj SkillJob, emit func(Event)
 	}
 
 	emit(Event{Kind: KindText, Text: "$ claude -p <skill:" + sj.Name + ">"})
+	emit(Event{Kind: KindText, Text: fmt.Sprintf("model=%s effort=%s max-turns=%d",
+		sj.Model,
+		effectiveEffort(sj.Effort, l.Effort),
+		effectiveMaxTurns(sj.MaxTurns, l.MaxTurns),
+	)})
 	planLimitText := ""
 	wrappedEmit := func(e Event) {
 		if planLimitText == "" {
