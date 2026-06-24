@@ -1055,11 +1055,12 @@ const (
 	// findingsBucketSkillSQL is the single source of truth for which scans'
 	// findings populate the curated Findings bucket: the LLM audit skills
 	// (security-deep-dive, vuln-scan) plus legacy claude jobs with an empty or
-	// NULL skill_name. The skill names are compile-time constants, so inlining
-	// them keeps every bucket filter agreeing on what "non-scanner" means
-	// without threading a bound parameter through each call site. Parenthesised
-	// so it can be embedded in larger expressions without precedence surprises.
-	findingsBucketSkillSQL = "(skill_name IN ('" + deepDiveSkillName + "', '" + vulnScanSkillName + "') OR skill_name = '' OR skill_name IS NULL)"
+	// NULL skill_name. The skill names are inlined as a literal rather than
+	// bound parameters because this fragment is embedded raw into larger SQL
+	// (e.g. an Order clause) that can't carry args; the listed names mirror the
+	// deepDiveSkillName and vulnScanSkillName constants above. Parenthesised so
+	// it can be embedded in larger expressions without precedence surprises.
+	findingsBucketSkillSQL = "(skill_name IN ('security-deep-dive', 'vuln-scan') OR skill_name = '' OR skill_name IS NULL)"
 	// nonScannerScanFilter selects findings whose parent scan is one of the LLM
 	// audits (security-deep-dive, vuln-scan), a legacy claude job (empty skill
 	// name), or has no recorded source — everything the UI groups under
