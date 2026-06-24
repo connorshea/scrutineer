@@ -62,7 +62,7 @@ func (s *Server) autoEnqueueFindingDedup(scan *db.Scan) {
 	var openNonScanner int64
 	if err := s.DB.Model(&db.Finding{}).
 		Where("repository_id = ?", scan.RepositoryID).
-		Where(nonScannerScanFilter, deepDiveSkillName).
+		Where(nonScannerScanFilter).
 		Where("status NOT IN (" + db.ClosedFindingLifecycleSQLValues() + ")").
 		Count(&openNonScanner).Error; err != nil {
 		s.Log.Warn("auto-enqueue finding-dedup: count open findings",
