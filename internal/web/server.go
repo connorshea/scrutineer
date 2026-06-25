@@ -1055,12 +1055,13 @@ const (
 	// findingsBucketSkillSQL is the single source of truth for which scans'
 	// findings populate the curated Findings bucket: the LLM audit skills
 	// (security-deep-dive, vuln-scan) plus legacy claude jobs with an empty or
-	// NULL skill_name. The skill names are inlined as a literal rather than
-	// bound parameters because this fragment is embedded raw into larger SQL
-	// (e.g. an Order clause) that can't carry args; the listed names mirror the
-	// deepDiveSkillName and vulnScanSkillName constants above. Parenthesised so
-	// it can be embedded in larger expressions without precedence surprises.
-	findingsBucketSkillSQL = "(skill_name IN ('security-deep-dive', 'vuln-scan') OR skill_name = '' OR skill_name IS NULL)"
+	// NULL skill_name. The names are spliced in as literals rather than bound
+	// parameters because this fragment is embedded raw into larger SQL (e.g. an
+	// Order clause) that can't carry args; built from the skill-name constants
+	// via const string concatenation so a rename only touches one line.
+	// Parenthesised so it can be embedded in larger expressions without
+	// precedence surprises.
+	findingsBucketSkillSQL = "(skill_name IN ('" + deepDiveSkillName + "', '" + vulnScanSkillName + "') OR skill_name = '' OR skill_name IS NULL)"
 	// nonScannerScanFilter selects findings whose parent scan is one of the LLM
 	// audits (security-deep-dive, vuln-scan), a legacy claude job (empty skill
 	// name), or has no recorded source — everything the UI groups under
@@ -1099,7 +1100,8 @@ func findingsScanIDs(gdb *gorm.DB) *gorm.DB {
 
 // isLLMAuditSkill reports whether a finalized scan is one of the curated LLM
 // audits (security-deep-dive, vuln-scan) whose fresh output drives the
-// auto-triage funnels (finding-dedup). Unlike findingsBucketSkillSQL this
+// auto-triage funnels (finding-dedup and the revalidate pre-sort). Unlike
+// findingsBucketSkillSQL this
 // deliberately excludes legacy empty/NULL skill_name rows: those are inert
 // imports, not a live scan that just produced new findings worth triaging.
 func isLLMAuditSkill(skillName string) bool {
