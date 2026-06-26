@@ -88,7 +88,8 @@ func (s *Server) settingsShow(w http.ResponseWriter, r *http.Request) {
 
 	meta := s.toolMetadataCached(r.Context())
 	// Overlay the boot-time staleness verdict onto the (separately cached)
-	// version metadata so the banner stays current without re-probing here.
+	// version metadata. This is the verdict from the startup check; it is not
+	// re-probed per request, so it reflects the runner image as of boot.
 	if st := s.runnerImageStatus(); st.Stale {
 		meta.Stale = true
 		meta.StaleDays = st.AgeDays
@@ -138,8 +139,8 @@ type toolMetadata struct {
 	// carries no such label.
 	Revision string
 	// Staleness of the runner image, from the boot-time check (issue #337).
-	// Overlaid onto the cached metadata per request so the banner reflects the
-	// latest verdict rather than the 5-minute version cache.
+	// Overlaid onto the cached metadata per request; the verdict itself is the
+	// one computed at startup and is not refreshed for the process lifetime.
 	Stale       bool
 	StaleDays   int
 	PullCommand string
